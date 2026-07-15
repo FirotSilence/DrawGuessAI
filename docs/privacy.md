@@ -30,6 +30,10 @@ The room stores participant display names, game configuration, commands, guesses
 
 Completed rooms are available only through an unguessable replay token and expire after the configured period, seven days by default. Reconnect and host tokens are carried in browser session storage and authenticated WebSocket subprotocol/API fields, not query strings or replay data. This is private-by-link rather than end-to-end encryption. Anyone who has the replay URL can view it until expiry.
 
+The featured replay linked from the README is a deliberately selected static public sample shipped with the release assets, so it is not subject to Durable Object expiry. It contains only already-public game state and events, with no provider key, endpoint, request body, host token, or reconnect token. All ordinary room replays still follow the configured retention period.
+
+README 中的精选回放是一个明确选取、随发布资源一同分发的静态公开样例，因此不受 Durable Object 到期清理影响。它只包含该局已经公开的游戏状态与事件，不包含模型密钥、端点、请求正文、房主令牌或重连令牌。除此之外，普通房间回放仍按配置的保留期到期删除。
+
 ## Non-goals / 非目标
 
 Version 0.1 does not promise strict anti-cheat protection, anonymity from other WebRTC peers, encrypted replay content beyond TLS, provider privacy, or protection from a compromised browser/deployment.

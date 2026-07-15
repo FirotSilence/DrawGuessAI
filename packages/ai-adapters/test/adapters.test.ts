@@ -19,6 +19,7 @@ import {
   observationPassLimitForRole,
   parseAiTurnResult,
   parseAiTurnResultForJob,
+  ProviderAuthModeSchema,
   type AiTurnJob,
   type ModelProfile,
   type ModelSecret
@@ -425,6 +426,10 @@ describe("AI adapters", () => {
     expect(JSON.stringify(profile("openai-compatible"))).not.toContain(secret.apiKey);
   });
 
+  it("validates all supported provider authentication modes", () => {
+    expect(ProviderAuthModeSchema.options).toEqual(["protocol-default", "bearer", "x-api-key"]);
+  });
+
   it("calls an OpenAI-compatible endpoint and parses structured output", async () => {
     const fetchImpl = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
       expect((init?.headers as Record<string, string>).authorization).toBe(
@@ -461,6 +466,47 @@ describe("AI adapters", () => {
     expect(result.guess).toBe("a mysterious station");
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
+
+  it.each([
+    ["openai-compatible", "x-api-key", undefined, secret.apiKey],
+    ["anthropic-compatible", "bearer", `Bearer ${secret.apiKey}`, undefined],
+    ["anthropic-compatible", "protocol-default", undefined, secret.apiKey]
+  ] as const)(
+    "supports %s endpoints using %s authentication",
+    async (protocol, authMode, expectedBearer, expectedApiKey) => {
+      const fetchImpl = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        const headers = init?.headers as Record<string, string>;
+        expect(headers.authorization).toBe(expectedBearer);
+        expect(headers["x-api-key"]).toBe(expectedApiKey);
+        if (protocol === "anthropic-compatible") {
+          expect(headers["anthropic-version"]).toBe("2023-06-01");
+        }
+        const result = {
+          jobId: "job-1",
+          status: "ok",
+          guess: "a station",
+          confidence: 0.6,
+          reaction: { kind: "confused", text: "I have an answer." }
+        };
+        return Promise.resolve(
+          new Response(
+            protocol === "openai-compatible"
+              ? JSON.stringify({ choices: [{ message: { content: JSON.stringify(result) } }] })
+              : JSON.stringify({ content: [{ type: "text", text: JSON.stringify(result) }] }),
+            { status: 200, headers: { "content-type": "application/json" } }
+          )
+        );
+      });
+
+      const result = await executeAiTurn({
+        profile: { ...profile(protocol), authMode },
+        secret,
+        job,
+        fetchImpl
+      });
+      expect(result.guess).toBe("a station");
+    }
+  );
 
   it("uses Anthropic message content and repairs one malformed response", async () => {
     const fetchImpl = vi

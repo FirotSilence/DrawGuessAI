@@ -39,4 +39,4 @@ Accepted drawing actions are previewed in order before submission. The browser i
 
 ## Secrets
 
-`ModelProfile` has only a local `secretRef`. There is no `apiKey`, authorization header, or provider secret field in any network, room, event, or replay schema.
+`ModelProfile` contains non-secret endpoint metadata, capabilities, optional authentication mode, and a local `secretRef`. Credentials live in a separate local `ModelSecret` or deployment-owned Worker binding. There is no `apiKey`, authorization header, referenced secret value, or provider secret field in any network, room event, DataChannel message, or replay schema.

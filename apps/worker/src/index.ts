@@ -5,8 +5,13 @@ import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 
 import type { Env } from "./env";
+import { featuredReplayAssetPath } from "./featured-replays";
 import { RoomObject } from "./room";
-import { configuredServerProfiles, executeServerProfile, publicServerProfiles } from "./server-ai";
+import {
+  configuredServerProfilesWithDiagnostics,
+  executeServerProfile,
+  publicServerProfiles
+} from "./server-ai";
 import { randomRoomCode } from "./tokens";
 
 export { RoomObject };
@@ -113,10 +118,15 @@ app.get("/api/health", (context) =>
 );
 
 app.get("/api/config", (context) => {
-  const profiles = configuredServerProfiles(context.env);
+  const configuration = configuredServerProfilesWithDiagnostics(context.env);
   return context.json({
     version: context.env.APP_VERSION,
-    serverAiProfiles: publicServerProfiles(profiles, context.env.AI !== undefined),
+    serverAiProfiles: publicServerProfiles(
+      configuration.profiles,
+      context.env.AI !== undefined,
+      configuration.workersAiProfiles
+    ),
+    serverAiConfigIssues: configuration.issues,
     turnConfigured:
       context.env.TURN_KEY_ID !== undefined && context.env.TURN_KEY_API_TOKEN !== undefined,
     replayDays: 7
@@ -267,12 +277,13 @@ app.post("/api/server-ai/:profileId", async (context) => {
       status
     );
   }
-  const profiles = configuredServerProfiles(context.env);
+  const configuration = configuredServerProfilesWithDiagnostics(context.env);
   const result = await executeServerProfile(
-    profiles,
+    configuration.profiles,
     context.env.AI,
     context.req.param("profileId"),
-    body.job
+    body.job,
+    configuration.workersAiProfiles
   );
   return context.json(result);
 });
@@ -281,6 +292,22 @@ app.get("/api/replays/:token", async (context) => {
   const parsedToken = ReplayTokenSchema.safeParse(context.req.param("token"));
   if (!parsedToken.success) return context.json({ error: "not-found" }, 404);
   const token = parsedToken.data;
+  const featuredAssetPath = featuredReplayAssetPath(token);
+  if (featuredAssetPath !== undefined) {
+    const assetUrl = new URL(featuredAssetPath, context.req.url);
+    const assetResponse = await context.env.ASSETS.fetch(
+      new Request(assetUrl, { headers: { accept: "application/json" } })
+    );
+    if (
+      assetResponse.ok &&
+      assetResponse.headers.get("content-type")?.includes("application/json")
+    ) {
+      return new Response(assetResponse.body, {
+        status: 200,
+        headers: { "content-type": "application/json; charset=utf-8" }
+      });
+    }
+  }
   const roomId = token.slice(0, 8);
   return context.env.ROOMS.getByName(roomId).fetch(
     `https://room.internal/replay?token=${encodeURIComponent(token)}`

@@ -14,6 +14,7 @@ import { AiCanvasSourceCommandSchema } from "./shapes";
 
 export const ProviderProtocolSchema = z.enum(["demo", "openai-compatible", "anthropic-compatible"]);
 export const ExecutionModeSchema = z.enum(["local", "server"]);
+export const ProviderAuthModeSchema = z.enum(["protocol-default", "bearer", "x-api-key"]);
 export const StructuredOutputModeSchema = z.enum(["none", "json-object", "json-schema"]);
 export const ModelRoleSchema = z.union([TurnRoleSchema, z.literal("prompt"), z.literal("review")]);
 export const DrawPhaseSchema = z.enum(["plan", "render", "inspect"]);
@@ -147,6 +148,7 @@ export const ModelProfileSchema = z
     id: z.string().min(1).max(80),
     label: z.string().min(1).max(40),
     protocol: ProviderProtocolSchema,
+    authMode: ProviderAuthModeSchema.optional(),
     execution: ExecutionModeSchema,
     baseUrl: z
       .string()
@@ -296,6 +298,7 @@ export const AiTurnResultSchema = z
   });
 
 export type ProviderProtocol = z.infer<typeof ProviderProtocolSchema>;
+export type ProviderAuthMode = z.infer<typeof ProviderAuthModeSchema>;
 export type ExecutionMode = z.infer<typeof ExecutionModeSchema>;
 export type ModelProfile = z.infer<typeof ModelProfileSchema>;
 export type ModelSecret = z.infer<typeof ModelSecretSchema>;

@@ -25,6 +25,18 @@ export const AppConfigSchema = z
         execution: z.literal("server")
       })
     ),
+    serverAiConfigIssues: z
+      .array(
+        z
+          .object({
+            source: z.enum(["scalar", "profiles-json", "legacy-minimax", "workers-ai-json"]),
+            code: z.string().min(1).max(80),
+            index: z.number().int().min(0).optional(),
+            path: z.string().max(120).optional()
+          })
+          .strict()
+      )
+      .default([]),
     turnConfigured: z.boolean(),
     replayDays: z.number().int()
   })

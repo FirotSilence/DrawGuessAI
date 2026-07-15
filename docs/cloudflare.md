@@ -2,7 +2,7 @@
 
 The Worker serves the Vite build, HTTP API, WebSocket signaling, optional server AI route, TURN credential route, and the `RoomObject` SQLite Durable Object.
 
-The production `AI` binding in `wrangler.jsonc` enables five allow-listed Cloudflare Workers AI profiles. It does not require an application-managed provider token.
+The production `AI` binding in `wrangler.jsonc` enables five built-in Cloudflare Workers AI profiles and up to five deployment-configured `@cf` profiles. It does not require an application-managed provider token.
 
 ## Local
 
@@ -13,7 +13,7 @@ pnpm dev
 
 The Vite server at `http://localhost:5173` proxies `/api` and WebSockets to Wrangler at `http://localhost:8787`.
 
-To exercise deployment-owned MiniMax locally without copying its token, run the Worker with the ignored production staging file:
+To exercise any deployment-owned compatible provider locally, run the Worker with the ignored production staging file:
 
 ```bash
 pnpm --filter @drawguessai/worker dev:prod-ai
@@ -44,12 +44,14 @@ The production Worker also declares separate rate-limit bindings for room creati
 
 `pnpm build` performs a Wrangler dry run only. The project preview is available at `https://drawguessai-preview.wujingit.workers.dev`. A fork should change the production Worker name in `wrangler.jsonc` before deploying to its own Cloudflare account.
 
-Deployment-owned MiniMax secrets can be uploaded from the ignored staging file. Review the target account and Worker name first; never commit or copy the file into a release artifact:
+Deployment-owned provider settings and secrets can be uploaded from the ignored staging file. The example is provider-neutral; MiniMax is only the current public preview's selected provider. Review the target account and Worker name first, and never commit or copy the file into a release artifact:
 
 ```bash
 cd apps/worker
 pnpm exec wrangler secret bulk .prod.vars --env production
 ```
+
+For multiple compatible-provider profiles, store `SERVER_AI_PROFILES_JSON` as metadata under 5 KiB and give each record an `apiKeyRef` that names a separate Worker Secret. Native Workers AI additions use the bounded `WORKERS_AI_PROFILES_JSON` format. Full schemas, migration behavior, and sanitized diagnostics are documented in [`ai-profiles.md`](ai-profiles.md).
 
 Deploy the already-audited build with:
 

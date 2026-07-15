@@ -2951,6 +2951,25 @@ label > span,
   align-items: center;
   justify-content: start;
 }
+.profile-role-capabilities {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.profile-role-capabilities legend {
+  margin-bottom: 7px;
+  font-size: 13px;
+  font-weight: 750;
+}
+.profile-role-capabilities > div {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px 14px;
+}
+.profile-role-capabilities label {
+  min-width: 0;
+}
 .profile-status {
   padding: 10px;
   border: 1px solid #c3dcd8;
@@ -3577,6 +3596,9 @@ label > span,
   .profile-form {
     grid-template-columns: 1fr;
     overflow: visible;
+  }
+  .profile-role-capabilities > div {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .wide-field {
     grid-column: auto;

@@ -105,13 +105,13 @@ describe("home defaults", () => {
     expect(aiExecutionErrorCode(new Error("Unknown"))).toBe("execution-error");
   });
 
-  it("prefers the configured MiniMax server profile over the programmatic demo", () => {
+  it("prefers the first complete server profile without depending on a provider name", () => {
     const profiles = [
       { profile: DEMO_PROFILE, remember: false },
-      serverRecord("another-model", "another-model"),
-      serverRecord("server-minimax-m3", "MiniMax-M3")
+      serverRecord("hosted-primary", "vision-model"),
+      serverRecord("hosted-secondary", "another-model")
     ];
-    expect(preferredModelProfileId(profiles)).toBe("server-minimax-m3");
+    expect(preferredModelProfileId(profiles)).toBe("hosted-primary");
     expect(DEMO_PROFILE.capabilities.drawingPlanMode).toBe("inline");
   });
 
@@ -130,7 +130,8 @@ describe("home defaults", () => {
   });
 
   it("keeps environment-owned local presets outside editable profile storage", () => {
-    expect(isBuiltInLocalProfileId("ccswitch-local-minimax-m3")).toBe(true);
+    expect(isBuiltInLocalProfileId("ccswitch-local")).toBe(true);
+    expect(isBuiltInLocalProfileId("ccswitch-local-minimax-m3")).toBe(false);
     expect(isBuiltInLocalProfileId("deepseek-local-direct")).toBe(true);
     expect(isBuiltInLocalProfileId("my-deepseek-profile")).toBe(false);
   });

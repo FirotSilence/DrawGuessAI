@@ -342,12 +342,22 @@ async function requestOnce(
 ): Promise<string> {
   const isOpenAi = profile.protocol === "openai-compatible";
   const headers: Record<string, string> = { "content-type": "application/json" };
-  if (isOpenAi) {
+  const authMode =
+    profile.authMode === undefined || profile.authMode === "protocol-default"
+      ? isOpenAi
+        ? "bearer"
+        : "x-api-key"
+      : profile.authMode;
+  if (authMode === "bearer") {
     headers.authorization = `Bearer ${secret.apiKey}`;
   } else {
     headers["x-api-key"] = secret.apiKey;
+  }
+  if (!isOpenAi) {
     headers["anthropic-version"] = "2023-06-01";
-    headers["anthropic-dangerous-direct-browser-access"] = "true";
+    if (profile.execution === "local") {
+      headers["anthropic-dangerous-direct-browser-access"] = "true";
+    }
   }
   const response = await fetchImpl(resolveEndpoint(profile), {
     method: "POST",

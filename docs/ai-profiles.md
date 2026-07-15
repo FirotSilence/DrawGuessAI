@@ -7,7 +7,9 @@ Open Model settings from the first screen and choose either:
 - `openai-compatible`: `POST {baseUrl}/v1/chat/completions`
 - `anthropic-compatible`: `POST {baseUrl}/v1/messages`
 
-The client uses `fetch`, not a provider SDK. Configure model name, vision support, structured-output mode, zero to two checkpoint observations, and drawing planning mode. `Fast` plans privately and draws in one request; `Detailed` makes a separate structured-plan request first. A non-vision profile may draw once from text, but it cannot guess a drawing or inspect a checkpoint. The lobby validates every assigned seat before starting.
+The client uses `fetch`, not a provider SDK. Configure model name, authentication (`protocol-default`, Bearer, or `x-api-key`), supported tasks, vision support, structured-output mode, zero to two checkpoint observations, and drawing planning mode. `Fast` plans privately and draws in one request; `Detailed` makes a separate structured-plan request first. A non-vision profile may draw once from text, but it cannot guess a drawing or inspect a checkpoint. The lobby validates every assigned seat before starting.
+
+**Test connection** first sends a compact text request. When **Vision capable** is enabled, it then sends a generated local PNG in a real guess request and reports vision as verified only after that second response passes the shared result contract. The test therefore validates the selected wire format and image payload, not merely whether the endpoint accepts text. It consumes normal provider usage.
 
 The endpoint must allow the application origin through CORS. DrawGuessAI deliberately has no arbitrary cloud proxy for browser-owned URLs. For a local compatibility gateway, allow the Vite origin during development:
 
@@ -56,24 +58,54 @@ DeepSeek's official V4 API cannot supply the requested image understanding. Use 
 
 ## Deployment-owned profiles
 
-Server profiles are optional. The public `/api/config` response exposes only ID, label, execution mode, and capabilities. Keys and model request bodies are never included.
+Server profiles are optional and provider-neutral. DrawGuessAI only requires an OpenAI Chat Completions-compatible or Anthropic Messages-compatible endpoint. The public `/api/config` response exposes only ID, label, execution mode, and capabilities. Keys, authentication mode, endpoint URL, model name, and request bodies are never included.
 
-### MiniMax-M3
+### One default provider
 
-Set the following Worker secrets to enable the built-in `MiniMax · MiniMax-M3` server profile. It is declared as vision-capable and can guess images or inspect up to two drawing checkpoints.
+The simplest deployment uses scalar settings for one allow-listed profile:
 
 ```dotenv
-MINIMAX_API_KEY=replace-me
-MINIMAX_BASE_URL=https://api.minimaxi.com/anthropic
-MINIMAX_MODEL=MiniMax-M3[1M]
-MINIMAX_MAX_OBSERVATION_PASSES=2
+SERVER_AI_API_KEY=replace-me
+SERVER_AI_PROFILE_ID=server-default
+SERVER_AI_LABEL=Hosted vision model
+SERVER_AI_PROTOCOL=openai-compatible
+SERVER_AI_AUTH_MODE=protocol-default
+SERVER_AI_BASE_URL=https://provider.example/v1
+SERVER_AI_MODEL=vision-model
+SERVER_AI_VISION=true
+SERVER_AI_STRUCTURED_OUTPUT=none
+SERVER_AI_MAX_OBSERVATION_PASSES=1
+SERVER_AI_DRAWING_PLAN_MODE=inline
+SERVER_AI_REASONING_MODE=provider-default
+SERVER_AI_SUPPORTED_ROLES=prompt,draw,guess,review
 ```
 
-The local production staging file is `apps/worker/.prod.vars`. It is ignored by Git. When present, the default `pnpm dev` command loads it into the local Worker so the same MiniMax server profile can be tested without duplicating credentials. A deployer may upload it with `wrangler secret bulk .prod.vars --env production` after verifying the target account and Worker name. An open-source checkout without this file still starts normally and simply omits deployment-owned server profiles.
+Only `SERVER_AI_API_KEY`, `SERVER_AI_BASE_URL`, and `SERVER_AI_MODEL` are required. Defaults are deliberately conservative: OpenAI-compatible protocol, protocol-standard authentication, text-only capability, no structured-output claim, no checkpoint observation, inline drawing plans, and prompt/draw/review roles. Vision, guessing, observation passes, and JSON-schema support must be enabled only when the selected endpoint actually supports them. Invalid or contradictory declarations are omitted instead of being advertised to rooms.
 
-`MINIMAX_MAX_OBSERVATION_PASSES` declares the deployment-owned model ceiling from zero to two. It does not override the room request: an AI drawing uses the lower of the room value and this ceiling. Zero advertises the profile as one-shot. The CCSwitch `ANTHROPIC_AUTH_TOKEN` is sent to MiniMax as `Authorization: Bearer ...`; the token never enters the public profile response, room event stream, replay, or browser bundle.
+`SERVER_AI_AUTH_MODE` accepts `protocol-default`, `bearer`, or `x-api-key`. Protocol default means Bearer authentication for OpenAI-compatible endpoints and `x-api-key` for Anthropic-compatible endpoints. `SERVER_AI_MAX_OBSERVATION_PASSES` declares a ceiling from zero to two; the game uses the lower of this value and the room rule. The first configured full-relay server profile becomes the default, regardless of provider or model name.
 
-Game turns use MiniMax's direct response mode rather than the Anthropic `thinking` field because extended thinking can consume the compact turn budget before emitting the required JSON. Draw and guess prompts still request a brief private plan, use a lower `0.45` sampling temperature, and expose only public execution stages such as requesting, inspecting, and refining. Provider thinking blocks are discarded if an endpoint returns them; they never enter the UI, room stream, logs, or replay.
+The local production staging file is `apps/worker/.prod.vars`. It is ignored by Git. When present, `pnpm dev` loads it into the local Worker. A deployer may upload it with `wrangler secret bulk .prod.vars --env production` after verifying the target account and Worker name. An open-source checkout without this file still starts normally and simply omits deployment-owned profiles.
+
+### Provider example: MiniMax-M3
+
+The hosted preview currently uses MiniMax as one deployment choice, not as an application requirement. The same generic settings configure it:
+
+```dotenv
+SERVER_AI_API_KEY=replace-me
+SERVER_AI_PROFILE_ID=server-minimax-m3
+SERVER_AI_LABEL=MiniMax · MiniMax-M3
+SERVER_AI_PROTOCOL=anthropic-compatible
+SERVER_AI_AUTH_MODE=bearer
+SERVER_AI_BASE_URL=https://api.minimaxi.com/anthropic
+SERVER_AI_MODEL=MiniMax-M3[1M]
+SERVER_AI_VISION=true
+SERVER_AI_STRUCTURED_OUTPUT=none
+SERVER_AI_MAX_OBSERVATION_PASSES=2
+SERVER_AI_REASONING_MODE=disabled
+SERVER_AI_SUPPORTED_ROLES=prompt,draw,guess,review
+```
+
+The older `MINIMAX_*` variable names remain accepted so existing deployments do not lose their configured profile during an upgrade; new deployments should use `SERVER_AI_*`. Direct response mode avoids spending the compact turn budget on provider thinking before JSON is emitted. Provider thinking blocks are discarded if an endpoint returns them; they never enter the UI, room stream, logs, or replay.
 
 MiniMax error `2056` is classified separately as `token-plan-window-exhausted`. It means the current rolling Token Plan resource window is unavailable, which is distinct from an exhausted account balance or weekly allowance. The adapter does not repeatedly call the provider for this non-transient-in-turn condition, and the game UI explains the distinction instead of reporting a generic account quota failure.
 
@@ -91,17 +123,40 @@ The production `AI` binding supplies five allow-listed choices without provider 
 
 Gemma, Kimi, and GLM use the native chat-completions response schema. Llama uses guided JSON, and Moondream uses its image-query task. Every result still passes the shared Zod contract, one repair attempt, and the non-blocking fallback path because provider-side JSON constraints are not treated as sufficient validation.
 
-Requests go through the native Workers AI binding rather than the arbitrary server-profile proxy. The binding is omitted from the default local environment so MiniMax and room development do not require a Cloudflare login; `dev:cloudflare-ai` enables the production binding when authenticated testing is needed. The lobby keeps all five profiles visible but prevents assigning a role-limited model to an incompatible timeline seat.
+The Workers AI-hosted [`@cf/zai-org/glm-4.7-flash`](https://developers.cloudflare.com/workers-ai/models/glm-4.7-flash/) endpoint is a text-generation model and does not accept image input. It can "draw" because DrawGuessAI asks it to produce vector drawing commands from a text phrase; that is not image generation or image understanding. Other GLM products or vision variants may have different capabilities. Add such an endpoint as a custom browser or server profile and declare `vision=true` only when that exact endpoint accepts image content.
+
+Requests go through the native Workers AI binding rather than the arbitrary server-profile proxy. The binding is omitted from the default local environment so ordinary room development does not require a Cloudflare login; `dev:cloudflare-ai` enables the production binding when authenticated testing is needed. The lobby keeps all five profiles visible but prevents assigning a role-limited model to an incompatible timeline seat.
+
+Deployers may add up to five more native Workers AI models with `WORKERS_AI_PROFILES_JSON`. This is a bounded model allow-list, not a URL proxy: every model must use an `@cf/provider/model` identifier, every profile ID must begin with `cloudflare-workers-ai-custom-`, and only the implemented `llama-guided`, `chat-completions`, or `moondream-query` dialect is accepted. Only `chat-completions` profiles accept chat template options, limited to the boolean `thinking` and `enable_thinking` switches. Chat/guided profiles must declare JSON Schema output; Moondream query profiles must be vision-enabled and guess-only.
+
+```json
+[
+  {
+    "id": "cloudflare-workers-ai-custom-vision",
+    "label": "Cloudflare · Custom Vision",
+    "model": "@cf/provider/model",
+    "dialect": "chat-completions",
+    "capabilities": {
+      "vision": true,
+      "structuredOutput": "json-schema",
+      "observationMode": "checkpoint",
+      "maxObservationPasses": 1,
+      "supportedRoles": ["prompt", "draw", "guess", "review"]
+    }
+  }
+]
+```
 
 ### Additional providers
 
-Each additional record is an allow-listed endpoint/model plus a key stored as the `SERVER_AI_PROFILES_JSON` Worker secret.
+`SERVER_AI_PROFILES_JSON` holds metadata for up to eight additional allow-listed endpoints. Keep this value below Cloudflare's 5 KiB per-variable limit. Put each provider token in its own Worker Secret and reference its variable name with `apiKeyRef`; this prevents a growing profile list and all keys from sharing one size-limited JSON value. Records may independently select `protocol-default`, `bearer`, or `x-api-key` authentication. One malformed record is skipped without hiding valid siblings.
 
 ```bash
+pnpm --filter @drawguessai/worker exec wrangler secret put VISION_PROVIDER_API_KEY --env production
 pnpm --filter @drawguessai/worker exec wrangler secret put SERVER_AI_PROFILES_JSON --env production
 ```
 
-Example secret value:
+Example metadata value:
 
 ```json
 [
@@ -124,12 +179,17 @@ Example secret value:
       "secretRef": "server-vision",
       "enabled": true
     },
-    "apiKey": "use-a-real-secret-here"
+    "apiKeyRef": "VISION_PROVIDER_API_KEY",
+    "authMode": "protocol-default"
   }
 ]
 ```
 
-The server route accepts only a built-in or configured profile ID and only for the authenticated executor of the current `jobId`. It is not a general URL forwarder.
+Inline `apiKey` records remain readable for migration compatibility, but new configurations should use `apiKeyRef`. Existing scalar `SERVER_AI_*` settings continue to work unchanged, and legacy `MINIMAX_*` names remain a fallback only. The server route accepts only a built-in or configured profile ID and only for the authenticated executor of the current `jobId`; it is not a general URL forwarder.
+
+`GET /api/config` includes a sanitized `serverAiConfigIssues` array. It identifies the source, stable error code, record index, and schema path for invalid JSON, missing referenced secrets, duplicate/reserved IDs, capability contradictions, and size limits. It never includes a token, endpoint value, model response, or invalid input value. Invalid profiles are not advertised to rooms.
+
+Cloudflare documents both the [5 KiB environment-variable limit](https://developers.cloudflare.com/workers/platform/limits/) and [secret management commands](https://developers.cloudflare.com/workers/configuration/secrets/).
 
 ## Output contract
 

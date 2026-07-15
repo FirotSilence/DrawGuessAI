@@ -33,6 +33,7 @@ import { TurnContributionPreview } from "./TurnContributionPreview";
 interface RevealScreenProps {
   state: GameState;
   replayPayload?: unknown;
+  featuredReplay?: boolean;
   onBack: () => void;
 }
 
@@ -182,7 +183,12 @@ function SettlementButton({
   );
 }
 
-export function RevealScreen({ state, replayPayload, onBack }: RevealScreenProps) {
+export function RevealScreen({
+  state,
+  replayPayload,
+  featuredReplay = false,
+  onBack
+}: RevealScreenProps) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const [settlementOpen, setSettlementOpen] = useState(false);
@@ -334,7 +340,7 @@ export function RevealScreen({ state, replayPayload, onBack }: RevealScreenProps
         />
       )}
       <footer className="replay-footer">
-        <span>{t("replayExpires")}</span>
+        <span>{t(featuredReplay ? "featuredReplayPermanent" : "replayExpires")}</span>
         <strong>v{state.protocolVersion}</strong>
       </footer>
     </main>
