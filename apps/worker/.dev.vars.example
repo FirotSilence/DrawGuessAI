@@ -1,11 +1,16 @@
-# Optional server-owned profiles. Store real values with `wrangler secret put`.
-# SERVER_AI_PROFILES_JSON=[{"profile":{"id":"server-fast","label":"Server AI","protocol":"openai-compatible","execution":"server","baseUrl":"https://api.example.com/v1","model":"vision-model","capabilities":{"vision":true,"structuredOutput":"json-schema","observationMode":"checkpoint","maxObservationPasses":1},"secretRef":"server-fast","enabled":true},"apiKey":"replace-me"}]
+# Optional single deployment-owned profile. See .prod.vars.example for every setting.
+# SERVER_AI_API_KEY=replace-me
+# SERVER_AI_BASE_URL=https://provider.example/v1
+# SERVER_AI_MODEL=vision-model
+# SERVER_AI_VISION=true
+# SERVER_AI_MAX_OBSERVATION_PASSES=1
 
-# Optional built-in MiniMax-M3 server profile.
-# MINIMAX_API_KEY=replace-me
-# MINIMAX_BASE_URL=https://api.minimaxi.com/anthropic
-# MINIMAX_MODEL=MiniMax-M3[1M]
-# MINIMAX_MAX_OBSERVATION_PASSES=2
+# Optional additional allow-listed profiles. Keep metadata below 5 KiB and use one variable per key.
+# VISION_PROVIDER_API_KEY=replace-me
+# SERVER_AI_PROFILES_JSON=[{"profile":{"id":"server-fast","label":"Server AI","protocol":"openai-compatible","execution":"server","baseUrl":"https://api.example.com/v1","model":"vision-model","capabilities":{"vision":true,"structuredOutput":"json-schema","observationMode":"checkpoint","maxObservationPasses":1},"secretRef":"server-fast","enabled":true},"apiKeyRef":"VISION_PROVIDER_API_KEY","authMode":"protocol-default"}]
+
+# Optional additional native Workers AI models. IDs must start with cloudflare-workers-ai-custom-.
+# WORKERS_AI_PROFILES_JSON=[{"id":"cloudflare-workers-ai-custom-vision","label":"Cloudflare · Custom Vision","model":"@cf/provider/model","dialect":"chat-completions","capabilities":{"vision":true,"structuredOutput":"json-schema","observationMode":"checkpoint","maxObservationPasses":1,"supportedRoles":["prompt","draw","guess","review"]}}]
 
 # Optional Cloudflare Realtime TURN credentials.
 # TURN_KEY_ID=replace-me

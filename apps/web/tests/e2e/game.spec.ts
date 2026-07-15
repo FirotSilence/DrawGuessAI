@@ -171,6 +171,19 @@ test("home is responsive and the sample canvas has pixels", async ({ page }, tes
   await page.screenshot({ path: `work/qa/home-${testInfo.project.name}.png`, fullPage: true });
 });
 
+test("the documented featured replay is bundled and remains playable", async ({
+  page
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop-chromium");
+  await page.goto("/?replay=5FPPFTC3.ySGKoHUPi39iesa0pr2uKA");
+  await expect(page.getByRole("heading", { name: "骑驴看唱本，走着瞧" })).toBeVisible();
+  await expect(page.locator(".reveal-step")).toHaveCount(8);
+  await expect(page.locator(".replay-footer")).toContainText(/Featured public replay|精选公开回放/);
+  await expect
+    .poll(() => paintedPixelsIn(page.locator(".reveal-step canvas").first()))
+    .toBeGreaterThan(100);
+});
+
 test("the first visit follows the browser language and remembers a manual choice", async ({
   browser
 }, testInfo) => {
@@ -431,6 +444,75 @@ test("local CCSwitch preset completes a real model test", async ({ page }, testI
   await expect(status).not.toContainText(/AI test failed|Connection failed/i);
 });
 
+test("a vision profile test sends an actual image request", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop-chromium");
+  const requests: unknown[] = [];
+  const requestHeaders: Record<string, string>[] = [];
+  await page.route("http://127.0.0.1:8080/v1/chat/completions", async (route) => {
+    const requestBody = JSON.parse(route.request().postData() ?? "{}") as Record<string, unknown>;
+    requests.push(requestBody);
+    requestHeaders.push(route.request().headers());
+    const requestText = JSON.stringify(requestBody);
+    const jobId = /Set jobId to exactly ([A-Za-z0-9_-]+)/.exec(requestText)?.[1] ?? "job";
+    const hasImage = requestText.includes('"type":"image_url"');
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify(
+                hasImage
+                  ? {
+                      jobId,
+                      status: "ok",
+                      guess: "umbrella",
+                      confidence: 0.9,
+                      reaction: { kind: "clap", text: "I have an answer." }
+                    }
+                  : {
+                      jobId,
+                      status: "ok",
+                      prompt: "riding a bicycle in the rain",
+                      promptKind: "phrase",
+                      promptTopic: "action",
+                      confidence: 0.9,
+                      reaction: { kind: "clap", text: "Ready." }
+                    }
+              )
+            }
+          }
+        ]
+      })
+    });
+  });
+
+  await page.goto("/");
+  await page.locator(".home-header .icon-button").click();
+  const dialog = page.getByRole("dialog", { name: /Model profiles|模型档案/ });
+  await dialog.getByLabel(/Profile name|档案名称/).fill("Vision test");
+  await dialog.getByLabel(/Model name|模型名称/).fill("vision-model");
+  await dialog.getByLabel(/API key|API 密钥/).fill("test-key");
+  await dialog.getByLabel(/Authentication|鉴权方式/).selectOption("x-api-key");
+  await expect(dialog.getByText(/Supported tasks|支持任务/)).toBeVisible();
+  await dialog.getByLabel(/Roundtable review|圆桌点评/).uncheck();
+  await dialog.getByRole("button", { name: /Test (profile|connection)|测试连接/ }).click();
+
+  await expect(dialog.locator(".profile-status")).toContainText(
+    /Vision request verified|看图请求已验证/
+  );
+  expect(requests).toHaveLength(2);
+  expect(JSON.stringify(requests[1])).toContain('"type":"image_url"');
+  expect(requestHeaders.every((headers) => headers["x-api-key"] === "test-key")).toBe(true);
+  expect(requestHeaders.every((headers) => headers.authorization === undefined)).toBe(true);
+
+  await dialog.getByRole("button", { name: /Save profile|保存档案/ }).click();
+  await dialog.locator(".profile-row", { hasText: "Vision test" }).click();
+  await expect(dialog.getByLabel(/Authentication|鉴权方式/)).toHaveValue("x-api-key");
+  await expect(dialog.getByLabel(/Roundtable review|圆桌点评/)).not.toBeChecked();
+});
+
 test("local CCSwitch preset does not expose a pretend model", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop-chromium");
   await page.goto("/");
@@ -507,7 +589,7 @@ test("a retrying local model request is identified while it is in flight", async
 
   await page.goto("/");
   await page.getByRole("button", { name: /Open room|开启房间/ }).click();
-  await assignAllAiSeats(page, "ccswitch-local-minimax-m3");
+  await assignAllAiSeats(page, "ccswitch-local");
   await startRelay(page);
 
   const activityTitle = page.locator(".ai-activity-title strong");
@@ -582,7 +664,7 @@ test("four blank model responses stop the room with a model fault", async ({ pag
 
   await page.goto("/");
   await page.getByRole("button", { name: /Open room|开启房间/ }).click();
-  await assignAllAiSeats(page, "ccswitch-local-minimax-m3");
+  await assignAllAiSeats(page, "ccswitch-local");
   await startRelay(page);
 
   await expect(page.locator(".model-fault-screen")).toBeVisible({ timeout: 15_000 });
@@ -618,7 +700,7 @@ test("an exhausted MiniMax Token Plan window is not reported as account quota", 
 
   await page.goto("/");
   await page.getByRole("button", { name: /Open room|开启房间/ }).click();
-  await assignAllAiSeats(page, "ccswitch-local-minimax-m3");
+  await assignAllAiSeats(page, "ccswitch-local");
   await startRelay(page);
 
   const fault = page.locator(".model-fault-screen");
@@ -718,7 +800,7 @@ test("canvas-limit output is retried while accepted actions draw progressively",
 
   await page.goto("/");
   await page.getByRole("button", { name: /Open room|开启房间/ }).click();
-  await assignAllAiSeats(page, "ccswitch-local-minimax-m3");
+  await assignAllAiSeats(page, "ccswitch-local");
   await openAdvancedOptions(page);
   const observationSetting = page.locator(".numeric-setting", {
     hasText: /AI inspections|AI 观察次数/
@@ -877,10 +959,7 @@ test("lobby rule drafts survive unrelated seat snapshots", async ({ page }, test
   });
   const input = observationSetting.locator('input[type="number"]');
   await input.fill("2");
-  await page
-    .locator(".ai-seat-control .seat-model-select")
-    .first()
-    .selectOption("ccswitch-local-minimax-m3");
+  await page.locator(".ai-seat-control .seat-model-select").first().selectOption("ccswitch-local");
   await page.waitForTimeout(300);
 
   await expect(input).toHaveValue("2");
@@ -921,7 +1000,7 @@ test("CCSwitch-only seats use MiniMax for drawing and vision guessing", async ({
   await page.goto("/");
   await page.getByLabel(/Your name|你的名字/).fill("MiniMax Host");
   await page.getByRole("button", { name: /Open room|开启房间/ }).click();
-  await assignAllAiSeats(page, "ccswitch-local-minimax-m3");
+  await assignAllAiSeats(page, "ccswitch-local");
   const start = page.getByRole("button", { name: /Start relay|开始接龙/ });
   await expect(start).toBeEnabled();
   await start.click();
@@ -955,7 +1034,7 @@ test("CCSwitch MiniMax honors two requested inspection rounds", async ({ page },
   test.setTimeout(240_000);
   await page.goto("/");
   await page.getByRole("button", { name: /Open room|开启房间/ }).click();
-  await assignAllAiSeats(page, "ccswitch-local-minimax-m3");
+  await assignAllAiSeats(page, "ccswitch-local");
   await openAdvancedOptions(page);
   const observationSetting = page.locator(".numeric-setting", {
     hasText: /AI inspections|AI 观察次数/

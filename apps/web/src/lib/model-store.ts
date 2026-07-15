@@ -15,7 +15,7 @@ export interface StoredModelProfile {
 const SESSION_KEY = "drawguessai:model-profiles";
 const DB_NAME = "drawguessai-local-secrets";
 const STORE_NAME = "model-profiles";
-export const CCSWITCH_PROFILE_ID = "ccswitch-local-minimax-m3";
+export const CCSWITCH_PROFILE_ID = "ccswitch-local";
 export const DEEPSEEK_DIRECT_PROFILE_ID = "deepseek-local-direct";
 
 const BUILT_IN_LOCAL_PROFILE_IDS: ReadonlySet<string> = new Set([
@@ -222,10 +222,8 @@ export function preferredModelProfileId(profiles: readonly StoredModelProfile[])
       modelSupportsRole(record.profile.capabilities, "guess")
   );
   return (
-    relayReady.find((record) => record.profile.id === "server-minimax-m3")?.profile.id ??
+    relayReady.find((record) => record.profile.execution === "server")?.profile.id ??
     relayReady.find((record) => record.profile.id === CCSWITCH_PROFILE_ID)?.profile.id ??
-    relayReady.find((record) => record.profile.model.toLowerCase().includes("minimax"))?.profile
-      .id ??
     relayReady.find((record) => record.profile.protocol !== "demo")?.profile.id ??
     relayReady[0]?.profile.id ??
     DEMO_PROFILE.id

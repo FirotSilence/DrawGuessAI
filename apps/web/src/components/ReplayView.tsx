@@ -8,6 +8,7 @@ import { RevealScreen } from "./RevealScreen";
 import { SourceLink } from "./SourceLink";
 
 interface ReplayPayload {
+  featured?: true;
   protocolVersion: 1;
   roomId: string;
   expiresAt: number;
@@ -35,7 +36,14 @@ export function ReplayView({ token, onBack }: { token: string; onBack: () => voi
   }, [t, token]);
 
   if (payload !== undefined)
-    return <RevealScreen state={payload.state} replayPayload={payload} onBack={onBack} />;
+    return (
+      <RevealScreen
+        state={payload.state}
+        replayPayload={payload}
+        featuredReplay={payload.featured === true}
+        onBack={onBack}
+      />
+    );
   return (
     <main className="loading-screen">
       {error === "" ? (

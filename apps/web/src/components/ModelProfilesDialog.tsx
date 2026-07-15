@@ -1,4 +1,4 @@
-import { type ModelProfile } from "@drawguessai/ai-adapters";
+import { type ModelProfile, type ModelRole } from "@drawguessai/ai-adapters";
 import { ExternalLink, Plus, Save, ShieldCheck, TestTube2, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -24,6 +24,7 @@ interface ProfileDraft {
   id?: string;
   label: string;
   protocol: "openai-compatible" | "anthropic-compatible";
+  authMode: "protocol-default" | "bearer" | "x-api-key";
   baseUrl: string;
   model: string;
   apiKey: string;
@@ -32,12 +33,16 @@ interface ProfileDraft {
   drawingPlanMode: "inline" | "separate";
   reasoningMode: "provider-default" | "disabled";
   observations: number;
+  supportedRoles: ModelRole[];
   remember: boolean;
 }
+
+const ALL_MODEL_ROLES: readonly ModelRole[] = ["prompt", "draw", "guess", "review"];
 
 const EMPTY_DRAFT: ProfileDraft = {
   label: "",
   protocol: "openai-compatible",
+  authMode: "protocol-default",
   baseUrl: "http://127.0.0.1:8080",
   model: "",
   apiKey: "",
@@ -46,8 +51,33 @@ const EMPTY_DRAFT: ProfileDraft = {
   drawingPlanMode: "inline",
   reasoningMode: "provider-default",
   observations: 1,
+  supportedRoles: [...ALL_MODEL_ROLES],
   remember: false
 };
+
+function createVisionTestImageDataUrl(): string {
+  const canvas = document.createElement("canvas");
+  canvas.width = 320;
+  canvas.height = 240;
+  const context = canvas.getContext("2d");
+  if (context === null) throw new Error("Canvas is unavailable");
+
+  context.fillStyle = "#f7f8fa";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.strokeStyle = "#202124";
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  context.lineWidth = 12;
+  context.beginPath();
+  context.moveTo(70, 170);
+  context.quadraticCurveTo(160, 55, 250, 170);
+  context.stroke();
+  context.fillStyle = "#2e62d5";
+  context.beginPath();
+  context.arc(160, 128, 28, 0, Math.PI * 2);
+  context.fill();
+  return canvas.toDataURL("image/png");
+}
 
 function draftFromRecord(record: StoredModelProfile): ProfileDraft {
   return {
@@ -57,6 +87,7 @@ function draftFromRecord(record: StoredModelProfile): ProfileDraft {
       record.profile.protocol === "anthropic-compatible"
         ? "anthropic-compatible"
         : "openai-compatible",
+    authMode: record.profile.authMode ?? "protocol-default",
     baseUrl: record.profile.baseUrl,
     model: record.profile.model,
     apiKey: record.apiKey ?? "",
@@ -65,6 +96,9 @@ function draftFromRecord(record: StoredModelProfile): ProfileDraft {
     drawingPlanMode: record.profile.capabilities.drawingPlanMode ?? "inline",
     reasoningMode: record.profile.capabilities.reasoningMode ?? "provider-default",
     observations: record.profile.capabilities.maxObservationPasses,
+    supportedRoles:
+      record.profile.capabilities.supportedRoles ??
+      ALL_MODEL_ROLES.filter((role) => role !== "guess" || record.profile.capabilities.vision),
     remember: record.remember
   };
 }
@@ -97,6 +131,7 @@ export function ModelProfilesDialog({
       id,
       label: draft.label.trim(),
       protocol: draft.protocol,
+      authMode: draft.authMode,
       execution: "local",
       baseUrl: draft.baseUrl.trim(),
       model: draft.model.trim(),
@@ -106,7 +141,8 @@ export function ModelProfilesDialog({
         observationMode: draft.vision && draft.observations > 0 ? "checkpoint" : "one-shot",
         maxObservationPasses: draft.vision ? Math.min(2, Math.max(0, draft.observations)) : 0,
         drawingPlanMode: draft.drawingPlanMode,
-        reasoningMode: draft.reasoningMode
+        reasoningMode: draft.reasoningMode,
+        supportedRoles: draft.supportedRoles.filter((role) => role !== "guess" || draft.vision)
       },
       secretRef: id,
       enabled: true
@@ -119,8 +155,14 @@ export function ModelProfilesDialog({
     setStatus("");
     try {
       const record = buildRecord();
+      const testCapabilities = { ...record.profile.capabilities };
+      delete testCapabilities.supportedRoles;
+      const testRecord: StoredModelProfile = {
+        ...record,
+        profile: { ...record.profile, capabilities: testCapabilities }
+      };
       const result = await executeAiPipeline(
-        record,
+        testRecord,
         {
           roomId: "profile-test",
           participantId: "local",
@@ -153,7 +195,48 @@ export function ModelProfilesDialog({
       if (result.status !== "ok") {
         throw new Error(`AI test failed: ${result.errorCode ?? "invalid response"}`);
       }
-      setStatus(result.prompt ?? "OK");
+      if (draft.vision) {
+        const visionResult = await executeAiPipeline(
+          testRecord,
+          {
+            roomId: "profile-test",
+            participantId: "local",
+            reconnectToken: "local",
+            seatProfiles: {},
+            seatPersonas: {},
+            seatPersonaCustomizations: {},
+            seatNames: {}
+          },
+          {
+            jobId: `vision-test-${crypto.randomUUID()}`,
+            roomId: "profile-test",
+            turnIndex: 0,
+            role: "guess",
+            locale: i18n.language === "en" ? "en" : "zh-CN",
+            personaId: "inspector",
+            imageDataUrl: createVisionTestImageDataUrl(),
+            observationIndex: 0,
+            observationLimit: 0,
+            timeLimitSeconds: 30,
+            budget: {
+              maxStrokes: 60,
+              maxUndos: 3,
+              colorCount: 10,
+              remainingStrokes: 60,
+              remainingUndos: 3
+            }
+          },
+          { timeoutMs: 30_000 }
+        );
+        if (visionResult.status !== "ok" || visionResult.guess === undefined) {
+          throw new Error(
+            t("visionTestFailed", { code: visionResult.errorCode ?? "invalid response" })
+          );
+        }
+        setStatus(`${result.prompt ?? "OK"} · ${t("visionVerified")}`);
+      } else {
+        setStatus(result.prompt ?? "OK");
+      }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Connection failed");
     } finally {
@@ -255,6 +338,23 @@ export function ModelProfilesDialog({
                 <option value="anthropic-compatible">Anthropic Messages</option>
               </select>
             </label>
+            <label>
+              <span>{t("authentication")}</span>
+              <select
+                disabled={isBuiltInLocalPreset}
+                value={draft.authMode}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    authMode: event.target.value as ProfileDraft["authMode"]
+                  })
+                }
+              >
+                <option value="protocol-default">{t("authProtocolDefault")}</option>
+                <option value="bearer">{t("authBearer")}</option>
+                <option value="x-api-key">{t("authApiKey")}</option>
+              </select>
+            </label>
             <label className="wide-field">
               <span>{t("endpoint")}</span>
               <input
@@ -289,7 +389,7 @@ export function ModelProfilesDialog({
               </label>
             )}
             <label>
-              <span>{t("protocol")}</span>
+              <span>{t("structuredOutput")}</span>
               <select
                 disabled={isBuiltInLocalPreset}
                 value={draft.structuredOutput}
@@ -355,10 +455,45 @@ export function ModelProfilesDialog({
                 type="checkbox"
                 checked={draft.vision}
                 disabled={isBuiltInLocalPreset}
-                onChange={(event) => setDraft({ ...draft, vision: event.target.checked })}
+                onChange={(event) => {
+                  const vision = event.target.checked;
+                  const roles = vision
+                    ? draft.supportedRoles
+                    : draft.supportedRoles.filter((role) => role !== "guess");
+                  setDraft({
+                    ...draft,
+                    vision,
+                    observations: vision ? draft.observations : 0,
+                    supportedRoles: roles.length === 0 ? ["draw"] : roles
+                  });
+                }}
               />
               <span>{t("vision")}</span>
             </label>
+            <fieldset className="profile-role-capabilities wide-field">
+              <legend>{t("supportedRoles")}</legend>
+              <div>
+                {ALL_MODEL_ROLES.map((role) => {
+                  const checked = draft.supportedRoles.includes(role);
+                  return (
+                    <label className="toggle-setting" key={role}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={isBuiltInLocalPreset || (role === "guess" && !draft.vision)}
+                        onChange={(event) => {
+                          const roles = event.target.checked
+                            ? [...new Set([...draft.supportedRoles, role])]
+                            : draft.supportedRoles.filter((candidate) => candidate !== role);
+                          if (roles.length > 0) setDraft({ ...draft, supportedRoles: roles });
+                        }}
+                      />
+                      <span>{t(`modelRole_${role}`)}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
             <label className="toggle-setting">
               <input
                 type="checkbox"

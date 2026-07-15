@@ -2,6 +2,12 @@
 
 [简体中文](#简体中文) | [English](#english)
 
+## 精选回放 / Featured Replay
+
+[![DrawGuessAI 精选回放：骑驴看唱本，走着瞧](docs/assets/featured-replay.png)](https://drawguessai-preview.wujingit.workers.dev/?replay=5FPPFTC3.ySGKoHUPi39iesa0pr2uKA)
+
+[在浏览器中查看完整 8 棒 AI 接龙 · Open the complete eight-turn AI relay](https://drawguessai-preview.wujingit.workers.dev/?replay=5FPPFTC3.ySGKoHUPi39iesa0pr2uKA)
+
 ## 简体中文
 
 DrawGuessAI 是一个开放源码的 AI 画猜接龙游戏。人类与受限 AI 画手共享同一套画板规则，可以旁观纯 AI 接龙，也可以和朋友通过邀请房间参与盲接龙。
@@ -15,7 +21,7 @@ pnpm install
 pnpm dev
 ```
 
-Web 界面默认运行于 `http://localhost:5173`，Cloudflare Worker 默认运行于 `http://localhost:8787`。本机存在被 Git 忽略的 `apps/worker/.prod.vars` 时，`pnpm dev` 会自动加载其中的部署者 MiniMax 档案用于本地测试；文件不存在时仍会正常启动。可用时会优先选择 MiniMax-M3；未配置真实 AI 时仍可使用明确标记为程序化的内置演示 AI 完整体验流程。真实模型配置只保存在房主浏览器，或由部署者通过 Worker Secrets 提供固定档案。
+Web 界面默认运行于 `http://localhost:5173`，Cloudflare Worker 默认运行于 `http://localhost:8787`。玩家可以在“模型档案”中配置 OpenAI Chat Completions 或 Anthropic Messages 兼容端点，并选择鉴权方式、任务能力和看图能力；端点仍须真正兼容所选协议并允许浏览器跨域访问。自备密钥默认只由当前浏览器使用。部署者也可以在被 Git 忽略的 `apps/worker/.prod.vars` 中配置允许列表内的服务端模型，`pnpm dev` 会自动加载它。模型能力由档案显式声明，首个能同时作画和猜图的服务端档案会成为默认选择，与厂商名称无关。公开试玩部署选择了 MiniMax 作为便捷选项，但项目本身不依赖 MiniMax；未配置真实 AI 时仍可使用明确标记为程序化的内置演示 AI。
 
 ### 自定义题目
 
@@ -45,7 +51,7 @@ pnpm install
 pnpm dev
 ```
 
-The web app runs at `http://localhost:5173` and the Cloudflare Worker at `http://localhost:8787`. When the Git-ignored `apps/worker/.prod.vars` file exists, `pnpm dev` automatically loads its deployment-owned MiniMax profile for local testing; development still starts normally when the file is absent. MiniMax-M3 is preferred when available; the clearly labeled programmatic demo keeps the full flow playable without credentials. Real provider credentials stay in the host browser unless a deployer explicitly configures allow-listed server profiles through Worker Secrets.
+The web app runs at `http://localhost:5173` and the Cloudflare Worker at `http://localhost:8787`. Players can add an OpenAI Chat Completions-compatible or Anthropic Messages-compatible endpoint in **Model profiles**, including its authentication mode, supported tasks, and vision capability. The endpoint must actually implement the selected protocol and permit browser CORS; the key is browser-owned by default. Deployers can instead put allow-listed server profiles in the Git-ignored `apps/worker/.prod.vars`, which `pnpm dev` loads automatically. Capabilities are declared explicitly, and the first server profile that can both draw and guess becomes the default regardless of provider name. The public preview happens to offer MiniMax as a convenient deployment choice, but DrawGuessAI does not depend on it. The clearly labeled programmatic demo remains available without credentials.
 
 ### Custom prompts
 
