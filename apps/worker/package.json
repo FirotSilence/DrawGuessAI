@@ -1,0 +1,26 @@
+{
+  "name": "@drawguessai/worker",
+  "version": "0.1.0",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:prod-ai": "wrangler dev --port 8787 --env-file .prod.vars",
+    "dev:cloudflare-ai": "wrangler dev --env production --port 8787 --env-file .prod.vars",
+    "build": "wrangler deploy --env production --dry-run --outdir dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@drawguessai/ai-adapters": "workspace:*",
+    "@drawguessai/canvas-protocol": "workspace:*",
+    "@drawguessai/game-core": "workspace:*",
+    "@drawguessai/network-protocol": "workspace:*",
+    "@drawguessai/word-bank": "workspace:*",
+    "hono": "^4.12.30",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "wrangler": "^4.110.0"
+  }
+}

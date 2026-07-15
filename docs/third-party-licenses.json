@@ -1,0 +1,184 @@
+{
+  "MIT": [
+    {
+      "name": "@babel/runtime",
+      "versions": ["7.29.7"],
+      "license": "MIT",
+      "author": "The Babel Team",
+      "homepage": "https://babel.dev/docs/en/next/babel-runtime",
+      "description": "babel's modular runtime helpers"
+    },
+    {
+      "name": "@dnd-kit/accessibility",
+      "versions": ["3.1.1"],
+      "license": "MIT",
+      "author": "Claudéric Demers",
+      "homepage": "https://github.com/clauderic/dnd-kit#readme",
+      "description": "A generic toolkit to help with accessibility"
+    },
+    {
+      "name": "@dnd-kit/core",
+      "versions": ["6.3.1"],
+      "license": "MIT",
+      "author": "Claudéric Demers",
+      "homepage": "https://github.com/clauderic/dnd-kit#readme",
+      "description": "dnd kit – a lightweight React library for building performant and accessible drag and drop experiences"
+    },
+    {
+      "name": "@dnd-kit/sortable",
+      "versions": ["10.0.0"],
+      "license": "MIT",
+      "author": "Claudéric Demers",
+      "homepage": "https://github.com/clauderic/dnd-kit#readme",
+      "description": "Official sortable preset and sensors for dnd kit"
+    },
+    {
+      "name": "@dnd-kit/utilities",
+      "versions": ["3.2.2"],
+      "license": "MIT",
+      "author": "Claudéric Demers",
+      "homepage": "https://github.com/clauderic/dnd-kit#readme",
+      "description": "Internal utilities to bee shared between `@dnd-kit` packages"
+    },
+    {
+      "name": "hono",
+      "versions": ["4.12.30"],
+      "license": "MIT",
+      "author": "Yusuke Wada",
+      "homepage": "https://hono.dev",
+      "description": "Web framework built on Web Standards"
+    },
+    {
+      "name": "html-parse-stringify",
+      "versions": ["3.0.1"],
+      "license": "MIT",
+      "author": "Henrik Joreteg",
+      "homepage": "https://github.com/henrikjoreteg/html-parse-stringify",
+      "description": "Parses well-formed HTML (meaning all tags closed) into an AST and back. quickly."
+    },
+    {
+      "name": "i18next",
+      "versions": ["26.3.6"],
+      "license": "MIT",
+      "author": "Jan Mühlemann",
+      "homepage": "https://www.i18next.com",
+      "description": "i18next internationalization framework"
+    },
+    {
+      "name": "react",
+      "versions": ["19.2.7"],
+      "license": "MIT",
+      "homepage": "https://react.dev/",
+      "description": "React is a JavaScript library for building user interfaces."
+    },
+    {
+      "name": "react-dom",
+      "versions": ["19.2.7"],
+      "license": "MIT",
+      "homepage": "https://react.dev/",
+      "description": "React package for working with the DOM."
+    },
+    {
+      "name": "react-i18next",
+      "versions": ["17.0.9"],
+      "license": "MIT",
+      "author": "Jan Mühlemann",
+      "homepage": "https://github.com/i18next/react-i18next",
+      "description": "Internationalization for react done right. Using the i18next i18n ecosystem."
+    },
+    {
+      "name": "scheduler",
+      "versions": ["0.27.0"],
+      "license": "MIT",
+      "homepage": "https://react.dev/",
+      "description": "Cooperative scheduler for the browser environment."
+    },
+    {
+      "name": "use-sync-external-store",
+      "versions": ["1.6.0"],
+      "license": "MIT",
+      "homepage": "https://github.com/facebook/react#readme",
+      "description": "Backwards compatible shim for React's useSyncExternalStore. Works with any React that supports hooks."
+    },
+    {
+      "name": "void-elements",
+      "versions": ["3.1.0"],
+      "license": "MIT",
+      "author": "hemanth.hm",
+      "homepage": "https://github.com/jadejs/void-elements",
+      "description": "Array of \"void elements\" defined by the HTML specification."
+    },
+    {
+      "name": "xstate",
+      "versions": ["5.32.4"],
+      "license": "MIT",
+      "author": "David Khourshid",
+      "homepage": "https://github.com/statelyai/xstate/tree/main/packages/core#readme",
+      "description": "Finite State Machines and Statecharts for the Modern Web."
+    },
+    {
+      "name": "zod",
+      "versions": ["4.4.3"],
+      "license": "MIT",
+      "author": "Colin McDonnell",
+      "homepage": "https://zod.dev",
+      "description": "TypeScript-first schema declaration and validation library with static type inference"
+    }
+  ],
+  "Apache-2.0": [
+    {
+      "name": "typescript",
+      "versions": ["7.0.2"],
+      "license": "Apache-2.0",
+      "author": "Microsoft Corp.",
+      "homepage": "https://www.typescriptlang.org/",
+      "description": "TypeScript is a language for application scale JavaScript development"
+    }
+  ],
+  "ISC": [
+    {
+      "name": "idb",
+      "versions": ["8.0.3"],
+      "license": "ISC",
+      "author": "Jake Archibald",
+      "homepage": "https://github.com/jakearchibald/idb#readme",
+      "description": "A small wrapper that makes IndexedDB usable"
+    },
+    {
+      "name": "jsonrepair",
+      "versions": ["3.15.0"],
+      "license": "ISC",
+      "author": "Jos de Jong",
+      "homepage": "https://github.com/josdejong/jsonrepair#readme",
+      "description": "Repair broken JSON documents"
+    },
+    {
+      "name": "lucide-react",
+      "versions": ["1.24.0"],
+      "license": "ISC",
+      "author": "Eric Fennis",
+      "homepage": "https://lucide.dev",
+      "description": "A Lucide icon library package for React applications."
+    }
+  ],
+  "BSD-2-Clause": [
+    {
+      "name": "simplify-js",
+      "versions": ["1.2.4"],
+      "license": "BSD-2-Clause",
+      "author": "Vladimir Agafonkin",
+      "homepage": "http://mourner.github.com/simplify-js/",
+      "description": "A high-performance JavaScript 2D/3D polyline simplification library"
+    }
+  ],
+  "0BSD": [
+    {
+      "name": "tslib",
+      "versions": ["2.8.1"],
+      "license": "0BSD",
+      "author": "Microsoft Corp.",
+      "homepage": "https://www.typescriptlang.org/",
+      "description": "Runtime library for TypeScript helper functions"
+    }
+  ]
+}

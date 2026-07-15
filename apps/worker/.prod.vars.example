@@ -1,0 +1,6 @@
+# Review the target Cloudflare account and Worker name before uploading:
+# pnpm --filter @drawguessai/worker exec wrangler secret bulk .prod.vars --env production
+MINIMAX_API_KEY="replace-with-a-production-secret"
+MINIMAX_BASE_URL="https://api.minimaxi.com/anthropic"
+MINIMAX_MODEL="MiniMax-M3[1M]"
+MINIMAX_MAX_OBSERVATION_PASSES="2"

@@ -1,0 +1,19 @@
+{
+  "name": "@drawguessai/network-protocol",
+  "version": "0.1.0",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@drawguessai/ai-adapters": "workspace:*",
+    "@drawguessai/canvas-protocol": "workspace:*",
+    "@drawguessai/game-core": "workspace:*",
+    "zod": "^4.4.3"
+  }
+}

@@ -1,0 +1,42 @@
+# Protocol v1
+
+## Canvas
+
+- Logical size: `1000 x 750`
+- Commands: `stroke | fill | undo | finish`. A stroke may be closed, may carry a validated palette `fillColor`, and may carry a bounded `widthProfile`. A fill records one bounded seed point and palette color; replay deterministically flood-fills the enclosed raster region at that point.
+- Stroke points: integer coordinates, two to 96 points per stroke
+- Hard turn budget: 4096 points
+- Paint-bucket safety budget: 12 fills per turn
+- Tools: free pen, eraser, and paint bucket
+- Widths: `4, 8, 16, 28`
+- Pressure: pen marks default to a subtle thin-thick-thin profile. Optional `startScale`, `peakScale`, `endScale`, and `peakAt` values let AI strokes control taper strength and direction without escaping the bounded canvas protocol.
+- Palette: first four to twelve entries of the fixed master palette
+- No text, arbitrary shape, layer, bitmap, or import command exists in the public canvas protocol
+
+AI drawing uses a validated mini-vector DSL: `line`, `polyline`, `polygon`, `rect`, `circle`, `ellipse`, `arc`, cubic `curve`, structured `path`, freehand `stroke`, and optional bounded transforms. Polygons fill by default; closed shapes can choose a palette fill. The adapter deterministically compiles each primitive into one bounded stroke before networking, storage, or replay, so arbitrary SVG, scripts, text, imports, and unbounded paths never enter the canvas. The default fast mode chooses the composition and emits commands in one request. A profile may instead enable a separate structured scene-plan request with stable object IDs and bounds when extra planning quality is worth the latency. Inspection receives the exact active, normalized vector commands from preceding passes and the optional retained plan. It may append any number of useful corrections within the room budget or choose `clearCanvas=true` for a complete rebuild. The flag and private vector authoring data are consumed by the executor and never enter replay data.
+
+## Room envelopes
+
+`GameEnvelope` includes protocol version, room ID, monotonic sequence, event ID, actor, visibility, event type, payload, and timestamp. Event IDs make reducer application idempotent. The authoritative WebSocket is ordered; connection, reconnection, membership changes, host transfer, AI completion, and turn transitions send a fresh visibility-filtered snapshot, so a reconnect does not depend on replaying a client-side cursor. Visibility is one of `public`, `active`, `acted`, `spectators`, `reveal`, or `ai-executor`.
+
+## AI jobs
+
+`AiTurnJob` identifies the room, turn, role, locale, persona, optional host-authored persona customization, visible input, public prompt tags, draw phase, optional retained scene plan and vector data, observation pass, total time limit, and remaining canvas budget. A customization contains a display name, description, turn prompt, and roundtable prompt; it can guide harmless visual style and voice but cannot override the canvas contract, privacy gate, role ownership, or recognizability requirements. Guess jobs receive language, prompt type, answer length, and, when enabled by the room, one subject hint such as fruit, person, or history without receiving the answer. `AiTurnResult` must match the `jobId` and contain exactly one role-appropriate output; only profiles using separate planning return a scene plan in a private planning phase. Prompt-generation results also classify the prompt with one subject tag. Roles include prompt, draw, guess, and the post-game public review. A takeover or retry reuses the job ID, making late responses harmless.
+
+The room observation setting controls drawing refinement only. Zero sends one initial render request and no visual checkpoint; one or two adds that many rendered-canvas inspection requests after the draft. The effective value is the minimum of the authoritative room request and the assigned model's validated checkpoint-vision ceiling, and it can be lowered further by expiry of the shared turn deadline. The client resends its current controlled rule state immediately before `game.start`, so an edited value cannot remain trapped in an unsaved form draft. Guess, prompt, and review jobs always use zero observation passes.
+
+An initial AI drawing is not accepted unless its active commands contain visible canvas content. Individual malformed drawing commands are skipped rather than blocking valid marks. Their bounded private error markers are supplied to the next observation pass, when available, together with the rendered canvas and surviving vector data; they are never added to room events or replays. Empty output, an unparsable envelope, or a candidate with no surviving visible command gets up to four provider attempts inside the original deadline. A structurally valid candidate that violates the combined palette, stroke, undo, or point budget is returned to the model with compact validation feedback and also gets up to four candidate attempts per drawing pass. Human and AI executors save a validated private drawing draft after accepted marks. If the turn deadline expires after visible work exists, the Durable Object appends `finish` and submits that last draft instead of replacing it with a blank canvas. An AI turn still enters `failed` when no valid visible draft ever existed. A finish-only AI drawing is never stored as a successful turn.
+
+`AiActivity` contains only public execution metadata: model label, role, planning/render/inspection stage, observation counters, prepared stroke count, and deadline. Raw provider requests, prompt contents, generated guesses, credentials, and hidden reasoning are forbidden by its strict schema.
+
+The public reaction attached to a live prompt, drawing, or guess result is a first-person player outburst, not a description. Its prompt has an explicit source firewall: wording may come only from the speaker's emotion, confidence, and time pressure, never from work content, correctness, or another player's behavior. It must remain natural with the canvas and answer hidden and cannot name, quote, paraphrase, categorize, or hint at the prompt, answer, guess, canvas objects, shapes, colors, counts, or relationships. Exact normalized content and common visual attribute leakage fail job validation and enter the normal repair path before any reaction event is published. Persona instructions control emotional delivery only.
+
+A successful provider-backed post-game review includes one to three directed emoji actions targeting another exact actor ID and that actor's exact turn index. Review jobs receive a compact actor/role ledger and every drawing-to-guess handoff; replies use exact actor IDs rather than display names or reusable persona labels. The adapter rejects swapped drawing/guess ownership, unknown targets, duplicate targets, and positive reactions to a contribution that did not match. Review length guidance is advisory; the generous 1,000-character schema ceiling exists only as a transport and replay abuse bound, not as a required style length. The client aggregates accepted review actions and live reactions made by other relay players into deterministic best-player, worst-player, and overall-game-rating statistics. No synthetic interaction is inserted when a model fails.
+
+Roundtable statistics weight applause and heart as `+2`, spark as `+1`, laugh as `0`, confused as `-1`, and egg as `-2`. Best and worst rank the highest and lowest received net reaction values among players who received an interaction. The overall ten-point rating blends the mean participant game score at 65% with normalized emoji sentiment at 35%; when only one signal exists, it is used alone. Departed reviews, self-reactions, spectator reactions, invalid targets, and duplicate targets from the same review do not count.
+
+Accepted drawing actions are previewed in order before submission. The browser interpolates sparse two-point marks, accelerates long queues, and broadcasts the same bounded stroke frames over WebRTC or WebSocket fallback. The authoritative completed command list remains the replay source of truth.
+
+## Secrets
+
+`ModelProfile` has only a local `secretRef`. There is no `apiKey`, authorization header, or provider secret field in any network, room, event, or replay schema.

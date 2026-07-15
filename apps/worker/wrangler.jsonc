@@ -1,0 +1,86 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "drawguessai-preview-local",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-13",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ROOMS",
+        "class_name": "RoomObject"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["RoomObject"]
+    }
+  ],
+  "vars": {
+    "APP_VERSION": "0.1.0",
+    "APP_ORIGIN": "",
+    "ROOM_IDLE_SECONDS": "7200"
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 0.1
+  },
+  "env": {
+    "production": {
+      "name": "drawguessai-preview",
+      "assets": {
+        "directory": "../web/dist",
+        "binding": "ASSETS",
+        "not_found_handling": "single-page-application",
+        "run_worker_first": ["/api/*"]
+      },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "ROOMS",
+            "class_name": "RoomObject"
+          }
+        ]
+      },
+      "ai": {
+        "binding": "AI",
+        "remote": true
+      },
+      "ratelimits": [
+        {
+          "name": "ROOM_CREATION_RATE_LIMITER",
+          "namespace_id": "1001",
+          "simple": { "limit": 20, "period": 60 }
+        },
+        {
+          "name": "ROOM_JOIN_RATE_LIMITER",
+          "namespace_id": "1002",
+          "simple": { "limit": 60, "period": 60 }
+        },
+        {
+          "name": "AI_RATE_LIMITER",
+          "namespace_id": "1003",
+          "simple": { "limit": 60, "period": 60 }
+        },
+        {
+          "name": "CREDENTIAL_RATE_LIMITER",
+          "namespace_id": "1004",
+          "simple": { "limit": 20, "period": 60 }
+        }
+      ],
+      "vars": {
+        "APP_VERSION": "0.1.0",
+        "APP_ORIGIN": "",
+        "ROOM_IDLE_SECONDS": "7200"
+      }
+    }
+  }
+}

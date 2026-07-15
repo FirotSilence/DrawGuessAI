@@ -1,0 +1,52 @@
+{
+  "name": "drawguessai",
+  "version": "0.1.0",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/FirotSilence/DrawGuessAI.git"
+  },
+  "homepage": "https://drawguessai-preview.wujingit.workers.dev",
+  "bugs": {
+    "url": "https://github.com/FirotSilence/DrawGuessAI/issues"
+  },
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @drawguessai/worker --filter @drawguessai/web dev",
+    "build": "pnpm --filter @drawguessai/web build && pnpm --filter @drawguessai/worker build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "licenses:generate": "node scripts/third-party-notices.mjs",
+    "licenses:check": "node scripts/third-party-notices.mjs --check",
+    "check": "pnpm licenses:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260713.1",
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.61.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^26.1.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "eslint": "^10.7.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "fast-check": "^4.9.0",
+    "jsdom": "^29.1.1",
+    "prettier": "^3.9.5",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.63.0",
+    "vitest": "^4.1.10"
+  }
+}
