@@ -1,6 +1,6 @@
 {
   "name": "@drawguessai/worker",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "license": "AGPL-3.0-only",
   "private": true,
   "type": "module",
@@ -21,6 +21,6 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "wrangler": "^4.110.0"
+    "wrangler": "^4.114.0"
   }
 }

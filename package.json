@@ -1,6 +1,6 @@
 {
   "name": "drawguessai",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "license": "AGPL-3.0-only",
   "private": true,
   "type": "module",
@@ -24,9 +24,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "build:verify": "node scripts/check-production-bundle.mjs",
     "licenses:generate": "node scripts/third-party-notices.mjs",
     "licenses:check": "node scripts/third-party-notices.mjs --check",
-    "check": "pnpm licenses:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "check": "pnpm licenses:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm build:verify",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

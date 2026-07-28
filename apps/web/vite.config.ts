@@ -23,11 +23,34 @@ export default defineConfig(({ command, mode }) => {
     process.env.DRAWGUESSAI_WORKER_ORIGIN?.trim() ||
     environment.DRAWGUESSAI_WORKER_ORIGIN?.trim() ||
     "http://127.0.0.1:8787";
+  const programmaticDemo =
+    command === "serve" &&
+    (process.env.DRAWGUESSAI_ENABLE_TEST_DEMO ?? environment.DRAWGUESSAI_ENABLE_TEST_DEMO) ===
+      "true";
+  const programmaticDemoProfile = programmaticDemo
+    ? {
+        id: "demo",
+        label: "Programmatic Demo Sketcher",
+        protocol: "demo",
+        execution: "local",
+        baseUrl: "https://demo.invalid",
+        model: "built-in-demo",
+        capabilities: {
+          vision: true,
+          structuredOutput: "json-schema",
+          observationMode: "one-shot",
+          maxObservationPasses: 0,
+          drawingPlanMode: "inline"
+        },
+        enabled: true
+      }
+    : null;
 
   return {
     plugins: [react()],
     define: {
-      __DRAWGUESSAI_LOCAL_DEEPSEEK__: JSON.stringify(localDeepSeek)
+      __DRAWGUESSAI_LOCAL_DEEPSEEK__: JSON.stringify(localDeepSeek),
+      __DRAWGUESSAI_PROGRAMMATIC_DEMO_PROFILE__: JSON.stringify(programmaticDemoProfile)
     },
     server: {
       host: "127.0.0.1",

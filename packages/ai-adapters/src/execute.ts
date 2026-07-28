@@ -1,4 +1,8 @@
-import { hasVisibleCanvasContent } from "@drawguessai/canvas-protocol";
+import {
+  hasVisibleCanvasContent,
+  MAX_POINTS_PER_TURN,
+  validateCanvasCommands
+} from "@drawguessai/canvas-protocol";
 
 import { getPersona } from "./personas";
 import { parseAiTurnResult } from "./parse";
@@ -24,7 +28,13 @@ export interface ExecuteAiTurnOptions {
   job: AiTurnJob;
   fetchImpl?: FetchLike;
   timeoutMs?: number;
+  attemptTimeoutMs?: number;
+  requireDrawingFinish?: boolean;
   onRetry?: (notice: AiRetryNotice) => void;
+}
+
+export interface ParseAiTurnResultOptions {
+  requireDrawingFinish?: boolean;
 }
 
 export interface AiRetryNotice {
@@ -158,11 +168,28 @@ function parseDataUrl(dataUrl: string): { mediaType: string; data: string } {
   return { mediaType: match[1], data: match[2] };
 }
 
+function isMiniMaxM3OpenAiProfile(profile: ModelProfile): boolean {
+  if (
+    profile.protocol !== "openai-compatible" ||
+    !/^minimax-m3(?:\[1m\])?$/iu.test(profile.model)
+  ) {
+    return false;
+  }
+  try {
+    return ["api.minimax.io", "api.minimaxi.com"].includes(
+      new URL(profile.baseUrl).hostname.toLowerCase()
+    );
+  } catch {
+    return false;
+  }
+}
+
 function openAiBody(
   profile: ModelProfile,
   job: AiTurnJob,
   repairNote?: string
 ): Record<string, unknown> {
+  const isMiniMaxM3 = isMiniMaxM3OpenAiProfile(profile);
   const content: Record<string, unknown>[] = [
     {
       type: "text",
@@ -174,13 +201,18 @@ function openAiBody(
   }
   const body: Record<string, unknown> = {
     model: profile.model,
-    max_tokens: modelMaxTokensForJob(job),
+    ...(isMiniMaxM3
+      ? { max_completion_tokens: modelMaxTokensForJob(job) }
+      : { max_tokens: modelMaxTokensForJob(job) }),
     temperature: modelTemperatureForJob(job),
     messages: [
       { role: "system", content: buildSystemPrompt(job) },
       { role: "user", content }
     ]
   };
+  if (isMiniMaxM3 && profile.capabilities.reasoningMode === "disabled") {
+    body.thinking = { type: "disabled" };
+  }
   if (profile.capabilities.structuredOutput === "json-schema") {
     body.response_format = {
       type: "json_schema",
@@ -261,6 +293,7 @@ export function aiResponseErrorCode(error: unknown): string {
 
 export function isRetryableAiRequestError(error: unknown): boolean {
   if (error instanceof AiAdapterError) {
+    if (error.code === "timeout") return true;
     if (error.code === "invalid-response" || error.code === "empty-drawing") return true;
     if (error.code === "rate-limited") return true;
     if (error.code !== "http") return false;
@@ -275,6 +308,13 @@ export function aiRepairInstruction(job: AiTurnJob, error: unknown): string {
   const detail = error instanceof Error ? error.message.slice(0, 180) : "schema mismatch";
   if (job.role === "draw" && job.drawPhase === "plan") {
     return `Your previous response was invalid: ${detail}. Return one corrected JSON object containing drawingPlan and no canvas commands.`;
+  }
+  if (
+    job.role === "draw" &&
+    error instanceof AiAdapterError &&
+    error.message.includes("missing-finish")
+  ) {
+    return `Your previous drawing was incomplete: ${detail}. Return one corrected JSON object with visible drawing commands and exactly one finish command after the last drawing command.`;
   }
   if (aiResponseErrorCode(error) === "empty-drawing") {
     return `Your previous drawing was blank: ${detail}. Return one corrected JSON object with clearCanvas=false and at least one visible pen stroke or shape. Do not return finish by itself.`;
@@ -369,6 +409,47 @@ async function requestOnce(
   });
   if (!response.ok) throw await providerHttpError(response);
   return extractText(profile, (await response.json()) as unknown);
+}
+
+async function requestWithAttemptTimeout(
+  profile: ModelProfile,
+  secret: ModelSecret,
+  job: AiTurnJob,
+  fetchImpl: FetchLike,
+  signal: AbortSignal,
+  attemptTimeoutMs: number | undefined,
+  repairNote?: string
+): Promise<string> {
+  if (attemptTimeoutMs === undefined) {
+    return requestOnce(profile, secret, job, fetchImpl, signal, repairNote);
+  }
+  const attemptController = new AbortController();
+  const abortAttempt = () => attemptController.abort();
+  if (signal.aborted) {
+    abortAttempt();
+  } else {
+    signal.addEventListener("abort", abortAttempt, { once: true });
+  }
+  let timeout: ReturnType<typeof globalThis.setTimeout> | undefined;
+  let timedOut = false;
+  try {
+    return await Promise.race([
+      requestOnce(profile, secret, job, fetchImpl, attemptController.signal, repairNote),
+      new Promise<never>((_resolve, reject) => {
+        timeout = globalThis.setTimeout(() => {
+          timedOut = true;
+          attemptController.abort();
+          reject(new AiAdapterError("timeout", "Provider request attempt timed out"));
+        }, attemptTimeoutMs);
+      })
+    ]);
+  } catch (error) {
+    if (timedOut) throw new AiAdapterError("timeout", "Provider request attempt timed out");
+    throw error;
+  } finally {
+    if (timeout !== undefined) globalThis.clearTimeout(timeout);
+    signal.removeEventListener("abort", abortAttempt);
+  }
 }
 
 export function createFallbackAiTurnResult(job: AiTurnJob, errorCode: string): AiTurnResult {
@@ -473,7 +554,11 @@ export function appearsToBeFullRedraw(
   return Math.max(...xs) - Math.min(...xs) >= 600 && Math.max(...ys) - Math.min(...ys) >= 350;
 }
 
-export function parseAiTurnResultForJob(text: string, job: AiTurnJob): AiTurnResult {
+export function parseAiTurnResultForJob(
+  text: string,
+  job: AiTurnJob,
+  options: ParseAiTurnResultOptions = {}
+): AiTurnResult {
   let result = parseAiTurnResult(text, job.jobId);
   if (job.role !== "review" && !isLiveReactionSpoilerFree(result, job)) {
     throw new AiAdapterError(
@@ -607,6 +692,23 @@ export function parseAiTurnResultForJob(text: string, job: AiTurnJob): AiTurnRes
       ...(result.clearCanvas === true ? [] : (job.inputCommands ?? [])),
       ...outputCommands
     ];
+    const validation = validateCanvasCommands(
+      visibleCommands,
+      {
+        maxStrokes: job.budget.maxStrokes,
+        maxUndos: job.budget.maxUndos,
+        colorCount: job.budget.colorCount,
+        maxTotalPoints: MAX_POINTS_PER_TURN
+      },
+      { requireFinish: options.requireDrawingFinish === true }
+    );
+    if (!validation.ok) {
+      const codes = [...new Set(validation.issues.map((issue) => issue.code))].join(", ");
+      throw new AiAdapterError(
+        "invalid-response",
+        `Drawing commands violate the active canvas rules: ${codes || "invalid-canvas"}`
+      );
+    }
     if (!hasVisibleCanvasContent(visibleCommands)) {
       throw new AiAdapterError("empty-drawing", "Drawing result contains no visible stroke");
     }
@@ -776,6 +878,10 @@ export async function executeAiTurn(options: ExecuteAiTurnOptions): Promise<AiTu
   const fetchImpl = options.fetchImpl ?? fetch;
   const controller = new AbortController();
   const timeoutMs = options.timeoutMs ?? 90_000;
+  const attemptTimeoutMs =
+    options.attemptTimeoutMs === undefined
+      ? undefined
+      : Math.max(1, Math.min(options.attemptTimeoutMs, timeoutMs));
   let timeout: ReturnType<typeof globalThis.setTimeout> | undefined;
   const deadlineResult = new Promise<AiTurnResult>((resolve) => {
     timeout = globalThis.setTimeout(() => {
@@ -789,16 +895,19 @@ export async function executeAiTurn(options: ExecuteAiTurnOptions): Promise<AiTu
     let lastError: unknown = new AiAdapterError("invalid-response", "No provider response");
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       try {
-        const response = await requestOnce(
+        const response = await requestWithAttemptTimeout(
           profile,
           secret,
           job,
           fetchImpl,
           controller.signal,
+          attemptTimeoutMs,
           repairNote
         );
         try {
-          return parseAiTurnResultForJob(response, job);
+          return parseAiTurnResultForJob(response, job, {
+            requireDrawingFinish: options.requireDrawingFinish === true
+          });
         } catch (error) {
           lastError = error;
           repairNote = aiRepairInstruction(job, error);

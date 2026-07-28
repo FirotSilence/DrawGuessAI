@@ -25,7 +25,6 @@ import {
 } from "../src/lib/ai-seats";
 import { ApiRequestError } from "../src/lib/api";
 import {
-  DEMO_PROFILE,
   isBuiltInLocalProfileId,
   preferredModelProfileId,
   type StoredModelProfile
@@ -51,6 +50,23 @@ function serverRecord(id: string, model: string): StoredModelProfile {
   };
   return { profile, remember: false };
 }
+
+const DEMO_PROFILE: ModelProfile = {
+  id: "demo",
+  label: "Programmatic Demo Sketcher",
+  protocol: "demo",
+  execution: "local",
+  baseUrl: "https://demo.invalid",
+  model: "built-in-demo",
+  capabilities: {
+    vision: true,
+    structuredOutput: "json-schema",
+    observationMode: "one-shot",
+    maxObservationPasses: 0,
+    drawingPlanMode: "inline"
+  },
+  enabled: true
+};
 
 class MemoryStorage {
   private readonly values = new Map<string, string>();
@@ -127,6 +143,8 @@ describe("home defaults", () => {
     expect(preferredModelProfileId([{ profile: DEMO_PROFILE, remember: false }, drawingOnly])).toBe(
       DEMO_PROFILE.id
     );
+    expect(preferredModelProfileId([drawingOnly])).toBeUndefined();
+    expect(preferredModelProfileId([])).toBeUndefined();
   });
 
   it("keeps environment-owned local presets outside editable profile storage", () => {

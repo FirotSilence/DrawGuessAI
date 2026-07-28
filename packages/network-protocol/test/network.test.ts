@@ -4,6 +4,7 @@ import {
   AiActivitySchema,
   ClientMessageSchema,
   PublicAiSeatSchema,
+  ServerMessageSchema,
   advanceEnvelopeCursor,
   canView,
   inspectEnvelope,
@@ -122,6 +123,10 @@ describe("network protocol", () => {
         hostToken: "host-token"
       }).type
     ).toBe("prompt.select");
+    expect(ClientMessageSchema.parse({ type: "game.restart", hostToken: "host-token" })).toEqual({
+      type: "game.restart",
+      hostToken: "host-token"
+    });
     expect(
       ClientMessageSchema.parse({
         type: "postgame.review",
@@ -156,6 +161,17 @@ describe("network protocol", () => {
     expect(ClientMessageSchema.safeParse({ type: "preview.clear", generation: -1 }).success).toBe(
       false
     );
+  });
+
+  it("carries the next automated start time with an automated room snapshot", () => {
+    const snapshot = ServerMessageSchema.parse({
+      type: "room.snapshot",
+      state: {},
+      peers: [],
+      automated: true,
+      automatedNextRunAt: 3_600_000
+    });
+    expect(snapshot).toMatchObject({ automated: true, automatedNextRunAt: 3_600_000 });
   });
 
   it("carries private drawing drafts and paint-bucket previews without a finish command", () => {

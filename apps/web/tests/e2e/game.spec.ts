@@ -135,6 +135,7 @@ test("home is responsive and the sample canvas has pixels", async ({ page }, tes
   await page.goto("/");
   await expect(page.getByText("DrawGuessAI").first()).toBeVisible();
   await expect(page.locator(".room-tool")).toBeVisible();
+  await expect(page.locator(".recent-matches-bar")).toBeVisible();
   const sourceLink = page.getByRole("link", { name: /Source code|源码/ }).first();
   await expect(sourceLink).toBeVisible();
   await expect(sourceLink).toHaveAttribute("href", "https://github.com/FirotSilence/DrawGuessAI");
@@ -169,6 +170,61 @@ test("home is responsive and the sample canvas has pixels", async ({ page }, tes
     });
   expect(paintedPixels).toBeGreaterThan(100);
   await page.screenshot({ path: `work/qa/home-${testInfo.project.name}.png`, fullPage: true });
+});
+
+test("the automated room opens its latest replay and joins without a peer signalling error", async ({
+  page,
+  request
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop-chromium");
+  await page.setExtraHTTPHeaders({
+    "cf-connecting-ip": `2001:db8:${crypto
+      .randomUUID()
+      .replaceAll("-", "")
+      .match(/.{4}/g)!
+      .slice(0, 6)
+      .join(":")}`
+  });
+  await expect
+    .poll(
+      async () => {
+        await request.get("http://127.0.0.1:43174/cdn-cgi/handler/scheduled");
+        const response = await request.get("http://127.0.0.1:43174/api/automated-room/status");
+        const status = (await response.json()) as {
+          phase?: string;
+          replayToken?: string;
+        };
+        return status.phase === "complete" && status.replayToken?.startsWith("MACH8888.") === true;
+      },
+      { timeout: 60_000, intervals: [500, 1_000] }
+    )
+    .toBe(true);
+
+  await page.goto("/");
+  await page.getByRole("button", { name: /Watch AI room|旁观 AI 挂机房/ }).click();
+
+  await expect(page).toHaveURL(/\?replay=MACH8888\./);
+  await expect(page.locator(".reveal-screen")).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.locator(".postgame-reviews")).toBeVisible();
+  await expect(page.locator(".persona-review")).toHaveCount(8);
+  const automatedNames = await page.locator(".reveal-step > header > strong").allTextContents();
+  expect(automatedNames).toHaveLength(8);
+  expect(new Set(automatedNames).size).toBe(8);
+  expect(automatedNames.every((name) => !/^AI\s*#?\d+$/i.test(name))).toBe(true);
+  const likeButton = page.locator(".replay-like-button");
+  await expect(likeButton).toBeVisible();
+  await likeButton.click();
+  await expect(likeButton).toHaveAttribute("aria-pressed", "true");
+
+  await page.goto("/?room=MACH8888");
+  await page.getByLabel(/Your name|你的名字/).fill("Automated observer");
+  await page.getByRole("button", { name: /Spectator|观察者/ }).click();
+  await page.getByRole("button", { name: /Enter room|进入房间/ }).click();
+  await expect(page.locator(".reveal-screen")).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.locator(".postgame-reviews")).toBeVisible();
+  await expect(page.locator(".persona-review")).toHaveCount(8);
 });
 
 test("the documented featured replay is bundled and remains playable", async ({
@@ -720,7 +776,7 @@ test("canvas-limit output is retried while accepted actions draw progressively",
   let firstDrawJobId = "";
   let initialCandidateCalls = 0;
   let firstInspectionCalls = 0;
-  let sawCanvasFeedback = false;
+  let sawAdapterRepair = false;
   let sawCanvasLimitCode = false;
   let sawSkippedCommandFeedback = false;
   await page.route("**/ccswitch/v1/messages", async (route) => {
@@ -766,7 +822,7 @@ test("canvas-limit output is retried while accepted actions draw progressively",
         ];
       } else {
         if (isFirstDraw) initialCandidateCalls += 1;
-        sawCanvasFeedback ||= lowerRequest.includes("previous-pass validation feedback");
+        sawAdapterRepair ||= lowerRequest.includes("your previous response was invalid");
         sawCanvasLimitCode ||= lowerRequest.includes("color-not-allowed");
         const invalidColor = isFirstDraw && initialCandidateCalls === 1;
         commands = [
@@ -826,7 +882,7 @@ test("canvas-limit output is retried while accepted actions draw progressively",
     .toBeGreaterThan(2);
   await expect.poll(() => initialCandidateCalls).toBe(2);
   await expect.poll(() => firstInspectionCalls).toBe(2);
-  expect(sawCanvasFeedback).toBe(true);
+  expect(sawAdapterRepair).toBe(true);
   expect(sawCanvasLimitCode).toBe(true);
   expect(sawSkippedCommandFeedback).toBe(true);
   await expect(activity.locator(".ai-activity-metrics")).toContainText("2/2", {
@@ -1256,6 +1312,9 @@ test("AI theatre completes and exports a versioned replay", async ({ page }, tes
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toContain("-v1.json");
   await page.screenshot({ path: "work/qa/reveal-1440x900.png", fullPage: true });
+  await page.getByRole("button", { name: /Play again|再来一局/ }).click();
+  await expect(page.locator(".lobby-screen")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Start relay|开始接龙/ })).toBeVisible();
 });
 
 test("roundtable resumes when a review packet is lost", async ({ page }, testInfo) => {
@@ -1533,9 +1592,9 @@ test("blind relay hides content, negotiates preview transport, and accepts both 
   const roomCode = await createRoom(host, "Host", "blind");
   await joinRoom(guest, roomCode, "Friend");
   await expect(host.locator(".participant-list").getByText("Friend")).toBeVisible();
-  await expect(
-    host.getByText(testInfo.project.name === "desktop-webkit" ? /WebSocket/ : /WebRTC/)
-  ).toBeVisible({ timeout: 15_000 });
+  await expect(host.locator(".connection-pill")).toContainText(/WebRTC|WebSocket/, {
+    timeout: 15_000
+  });
   await startRelay(host);
 
   await expect

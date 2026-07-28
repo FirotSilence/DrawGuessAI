@@ -12,6 +12,7 @@ import {
   createPromptMetadata,
   gamePhaseMachine,
   hashGameState,
+  postGameReviewId,
   replayGame,
   type GameEvent
 } from "../src";
@@ -165,6 +166,19 @@ describe("game core", () => {
       errorCode: "empty-drawing",
       at: 5
     });
+    const restarted = applyGameEvent(failed, {
+      type: "game.restarted",
+      id: "5",
+      at: 6,
+      seed: "new-seed"
+    });
+    expect(restarted.phase).toBe("lobby");
+    expect(restarted.seed).toBe("new-seed");
+    expect(restarted.turnIndex).toBe(0);
+    expect(restarted.artifacts).toEqual([]);
+    expect(restarted.reactions).toEqual([]);
+    expect(restarted.failure).toBeUndefined();
+    expect(restarted.replayToken).toBeUndefined();
   });
 
   it("records host transfer as a deterministic domain event", () => {
@@ -364,5 +378,12 @@ describe("game core", () => {
     expect(
       applyGameEvent(reviewed, { ...event, id: "another-event" }).postGameReviews
     ).toHaveLength(1);
+  });
+
+  it("scopes post-game review ids to a match seed", () => {
+    const first = createInitialGameState("room", "first-seed", DEFAULT_GAME_CONFIG, 1);
+    const restarted = { ...first, seed: "second-seed" };
+
+    expect(postGameReviewId(first, "ai-1")).not.toBe(postGameReviewId(restarted, "ai-1"));
   });
 });

@@ -316,6 +316,14 @@ export const GameEventSchema = z.discriminatedUnion("type", [
       at: z.number().int(),
       replayToken: z.string().min(20).max(200)
     })
+    .strict(),
+  z
+    .object({
+      type: z.literal("game.restarted"),
+      id: z.string(),
+      at: z.number().int(),
+      seed: z.string().min(1).max(120)
+    })
     .strict()
 ]);
 
@@ -347,6 +355,13 @@ export type ReactionRecord = z.infer<typeof ReactionRecordSchema>;
 export type PostGameAction = z.infer<typeof PostGameActionSchema>;
 export type PostGameReview = z.infer<typeof PostGameReviewSchema>;
 export type GameEvent = z.infer<typeof GameEventSchema>;
+
+export function postGameReviewId(
+  state: Pick<GameState, "roomId" | "seed">,
+  actorId: string
+): string {
+  return `review_${state.roomId}_${state.seed}_${actorId}`.slice(0, 100);
+}
 
 export function createInitialGameState(
   roomId: string,
@@ -405,7 +420,9 @@ export function applyGameEvent(state: GameState, rawEvent: GameEvent): GameState
 
   switch (event.type) {
     case "player.joined": {
-      ensurePhase(state, ["lobby"], event);
+      if (state.phase !== "lobby" && event.participant.roomRole !== "spectator") {
+        ensurePhase(state, ["lobby"], event);
+      }
       const existing = next.participants.findIndex(
         (participant) => participant.id === event.participant.id
       );
@@ -417,7 +434,12 @@ export function applyGameEvent(state: GameState, rawEvent: GameEvent): GameState
       return next;
     }
     case "player.left": {
-      ensurePhase(state, ["lobby"], event);
+      const departing = state.participants.find(
+        (participant) => participant.id === event.participantId
+      );
+      if (state.phase !== "lobby" && departing?.roomRole !== "spectator") {
+        ensurePhase(state, ["lobby"], event);
+      }
       next.participants = next.participants.filter(
         (participant) => participant.id !== event.participantId
       );
@@ -559,6 +581,23 @@ export function applyGameEvent(state: GameState, rawEvent: GameEvent): GameState
       ensurePhase(state, ["reveal"], event);
       next.phase = "complete";
       next.replayToken = event.replayToken;
+      return next;
+    }
+    case "game.restarted": {
+      ensurePhase(state, ["complete", "failed"], event);
+      next.seed = event.seed;
+      next.phase = "lobby";
+      next.turnIndex = 0;
+      next.artifacts = [];
+      delete next.promptMetadata;
+      next.reactions = [];
+      next.postGameReviews = [];
+      next.participants = next.participants.map((participant) => ({
+        ...participant,
+        hasActed: false
+      }));
+      delete next.replayToken;
+      delete next.failure;
       return next;
     }
   }

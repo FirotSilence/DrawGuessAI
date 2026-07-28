@@ -19,6 +19,8 @@ To exercise any deployment-owned compatible provider locally, run the Worker wit
 pnpm --filter @drawguessai/worker dev:prod-ai
 ```
 
+The automated room intentionally waits for a real deployment-owned model. A normal local Worker without a server profile can still run rooms after a model is configured, but it will not expose or publish simulated matches. The deterministic adapter is enabled only by the Playwright test server. Use `dev:prod-ai` or `dev:cloudflare-ai` before testing hourly automated games.
+
 Authenticated Cloudflare Workers AI testing uses the production environment and incurs normal Workers AI usage:
 
 ```bash

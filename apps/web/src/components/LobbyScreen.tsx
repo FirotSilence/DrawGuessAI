@@ -57,6 +57,7 @@ import { SourceLink } from "./SourceLink";
 import { PromptTags } from "./PromptTags";
 import { RulesEditor } from "./RulesEditor";
 import { Timeline } from "./Timeline";
+import { AutomatedStartCountdown } from "./AutomatedStartCountdown";
 
 interface LobbyScreenProps {
   state: GameState;
@@ -67,6 +68,7 @@ interface LobbyScreenProps {
   send: (message: ClientMessage) => void;
   onSessionChange: (session: RoomSession) => void;
   onLeave: () => void;
+  automatedNextRunAt?: number;
 }
 
 function buildConfiguredTimeline(
@@ -429,7 +431,8 @@ export function LobbyScreen({
   connection,
   send,
   onSessionChange,
-  onLeave
+  onLeave,
+  automatedNextRunAt
 }: LobbyScreenProps) {
   const { t, i18n } = useTranslation();
   const [timeline, setTimeline] = useState<TimelineSlot[]>(state.timeline);
@@ -466,10 +469,9 @@ export function LobbyScreen({
   const profileForSeat = (
     seatId: string,
     seatProfiles = session.seatProfiles
-  ): StoredModelProfile => {
-    const profileId =
-      seatProfiles[seatId] ?? seatProfiles[AI_SEAT_IDS[0]!] ?? profiles[0]?.profile.id;
-    return profiles.find((record) => record.profile.id === profileId) ?? profiles[0]!;
+  ): StoredModelProfile | undefined => {
+    const profileId = seatProfiles[seatId] ?? seatProfiles[AI_SEAT_IDS[0]!];
+    return profiles.find((record) => record.profile.id === profileId);
   };
 
   const personaForSeat = (seatId: string, index: number, seatPersonas = session.seatPersonas) => {
@@ -515,29 +517,32 @@ export function LobbyScreen({
     );
     const normalizedPersonas = completeAiSeatPersonas({ ...timelinePersonas, ...seatPersonas });
     const normalizedNames = namesForSeats(sourceTimeline, seatNames);
-    return AI_SEAT_IDS.map((seatId, index) => {
+    return AI_SEAT_IDS.flatMap((seatId, index) => {
       const record = profileForSeat(seatId, seatProfiles);
+      if (record === undefined) return [];
       const personaId =
         normalizedPersonas[seatId] ??
         sourceTimeline.find((slot) => slot.actorId === seatId)?.personaId ??
         AI_PERSONAS[index % AI_PERSONAS.length]!.id;
       const persona = getPersona(personaId);
       const personaCustomization = seatPersonaCustomizations[seatId];
-      return {
-        seatId,
-        profileId: record.profile.id,
-        displayName: normalizedNames[seatId] ?? `AI ${index + 1}`,
-        personaId: persona.id,
-        ...(personaCustomization === undefined ? {} : { personaCustomization }),
-        capabilities: record.profile.capabilities,
-        execution:
-          record.profile.protocol === "demo"
-            ? "demo"
-            : record.profile.execution === "server"
-              ? "server"
-              : "local",
-        ready: isModelProfileReady(record)
-      };
+      return [
+        {
+          seatId,
+          profileId: record.profile.id,
+          displayName: normalizedNames[seatId] ?? `AI ${index + 1}`,
+          personaId: persona.id,
+          ...(personaCustomization === undefined ? {} : { personaCustomization }),
+          capabilities: record.profile.capabilities,
+          execution:
+            record.profile.protocol === "demo"
+              ? "demo"
+              : record.profile.execution === "server"
+                ? "server"
+                : "local",
+          ready: isModelProfileReady(record)
+        }
+      ];
     });
   };
 
@@ -799,12 +804,13 @@ export function LobbyScreen({
     });
   };
 
-  const invalidSeats = publicAiSeats().filter(
-    (seat) =>
-      activeAiSeatIds.includes(seat.seatId) &&
-      (!seat.ready || !profileSupportsSeat(seat.seatId, seat.capabilities))
-  );
-  const generatedPromptAvailable = publicAiSeats().some(
+  const configuredAiSeats = publicAiSeats();
+  const configuredAiSeatsById = new Map(configuredAiSeats.map((seat) => [seat.seatId, seat]));
+  const invalidSeatIds = activeAiSeatIds.filter((seatId) => {
+    const seat = configuredAiSeatsById.get(seatId);
+    return seat === undefined || !seat.ready || !profileSupportsSeat(seatId, seat.capabilities);
+  });
+  const generatedPromptAvailable = configuredAiSeats.some(
     (seat) => seat.ready && modelSupportsRole(seat.capabilities, "prompt")
   );
   const editingPersonaIndex =
@@ -1024,7 +1030,8 @@ export function LobbyScreen({
               const personaDescription =
                 personaCustomization?.description ?? persona.descriptions[locale];
               const seatName = namesForSeats()[seatId] ?? `AI ${index + 1}`;
-              const modelObservationLimit = modelObservationPassLimit(record.profile.capabilities);
+              const modelObservationLimit =
+                record === undefined ? 0 : modelObservationPassLimit(record.profile.capabilities);
               const effectiveObservationLimit = Math.min(
                 config.rules.aiObservationPasses,
                 modelObservationLimit
@@ -1082,9 +1089,14 @@ export function LobbyScreen({
                     })}
                     data-observation-limit={effectiveObservationLimit}
                     disabled={!isHost}
-                    value={record.profile.id}
+                    value={record?.profile.id ?? ""}
                     onChange={(event) => assignProfile(seatId, event.target.value)}
                   >
+                    {record === undefined && (
+                      <option value="" disabled>
+                        {t("noAi")}
+                      </option>
+                    )}
                     {profiles.map((profile) => (
                       <option
                         key={profile.profile.id}
@@ -1099,7 +1111,7 @@ export function LobbyScreen({
               );
             })}
           </div>
-          {invalidSeats.length > 0 && <p className="form-error">{t("noAi")}</p>}
+          {invalidSeatIds.length > 0 && <p className="form-error">{t("noAi")}</p>}
         </section>
       </div>
 
@@ -1131,7 +1143,7 @@ export function LobbyScreen({
               className="primary-button start-button"
               type="button"
               disabled={
-                invalidSeats.length > 0 ||
+                invalidSeatIds.length > 0 ||
                 state.participants.some((participant) => !participant.connected)
               }
               onClick={() => setPromptDialogOpen(true)}
@@ -1140,8 +1152,10 @@ export function LobbyScreen({
               {t("start")}
             </button>
           </>
-        ) : (
+        ) : automatedNextRunAt === undefined ? (
           <span className="waiting-label">{t("waiting")}</span>
+        ) : (
+          <AutomatedStartCountdown nextRunAt={automatedNextRunAt} />
         )}
       </footer>
 

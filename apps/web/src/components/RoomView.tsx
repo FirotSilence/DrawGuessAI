@@ -14,6 +14,7 @@ import {
 import {
   GameEventSchema,
   applyGameEvent,
+  postGameReviewId,
   type GameState,
   type PostGameReview,
   type TimelineSlot
@@ -24,6 +25,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { aiExecutionErrorCode, executeAiPipeline } from "../lib/ai-executor";
+import { fetchAutomatedRoom } from "../lib/api";
 import { commandPlaybackWeight, strokeAtPlaybackProgress } from "../lib/canvas-playback";
 import { commandsToAiImageDataUrl } from "../lib/canvas-renderer";
 import type { StoredModelProfile } from "../lib/model-store";
@@ -105,8 +107,8 @@ function uniqueAiReviewSlots(state: Pick<GameState, "timeline">): TimelineSlot[]
   ];
 }
 
-function reviewDraftKey(roomId: string, seatId: string): string {
-  return `${roomId}:${seatId}`;
+function reviewDraftKey(roomId: string, seed: string, seatId: string): string {
+  return `${roomId}:${seed}:${seatId}`;
 }
 
 function departedPostGameReview(
@@ -116,7 +118,7 @@ function departedPostGameReview(
   errorCode: string
 ): PostGameReview {
   return {
-    id: `review_${state.roomId}_${slot.actorId}`.slice(0, 100),
+    id: postGameReviewId(state, slot.actorId),
     seatId: slot.actorId,
     personaId: slot.personaId ?? "maestro",
     displayName: slot.displayName,
@@ -137,9 +139,12 @@ async function createPostGameReviewDraft(
   session: RoomSession,
   published: readonly PostGameReview[]
 ): Promise<PostGameReview> {
-  const profileId = session.seatProfiles[slot.actorId] ?? session.seatProfiles["ai-1"] ?? "demo";
-  const record = profiles.find((candidate) => candidate.profile.id === profileId);
-  const modelLabel = record?.profile.label ?? "Demo";
+  const profileId = session.seatProfiles[slot.actorId] ?? session.seatProfiles["ai-1"];
+  const record =
+    profileId === undefined
+      ? undefined
+      : profiles.find((candidate) => candidate.profile.id === profileId);
+  const modelLabel = record?.profile.label ?? slot.displayName;
   try {
     const humanDrawing = humanDrawingForReviewer(state, slot.actorId);
     const canInspectHumanDrawing =
@@ -155,7 +160,7 @@ async function createPostGameReviewDraft(
     while (reviewContextLines.join("\n").length > 6_000) reviewContextLines.pop();
     const reviewContext = reviewContextLines.join("\n");
     const job: AiTurnJob = {
-      jobId: `review_${state.roomId}_${slot.actorId}`.slice(0, 100),
+      jobId: postGameReviewId(state, slot.actorId),
       roomId: state.roomId,
       turnIndex: -1,
       role: "review",
@@ -290,6 +295,8 @@ export function RoomView({ initialSession, profiles, turnConfigured, onLeave }: 
   const [connection, setConnection] = useState<"connecting" | "direct" | "fallback" | "offline">(
     "connecting"
   );
+  const [automatedRoom, setAutomatedRoom] = useState(false);
+  const [automatedNextRunAt, setAutomatedNextRunAt] = useState<number>();
   const [remoteCursors, setRemoteCursors] = useState<
     Record<string, { x: number; y: number } | null>
   >({});
@@ -326,6 +333,29 @@ export function RoomView({ initialSession, profiles, turnConfigured, onLeave }: 
     };
   }, []);
 
+  useEffect(() => {
+    if (!automatedRoom) {
+      setAutomatedNextRunAt(undefined);
+      return;
+    }
+    let active = true;
+    let timer: number | undefined;
+    const poll = async () => {
+      try {
+        const status = await fetchAutomatedRoom();
+        if (active) setAutomatedNextRunAt(status.nextRunAt);
+      } catch {
+        // The room socket remains authoritative while status polling is unavailable.
+      }
+      if (active) timer = window.setTimeout(() => void poll(), 15_000);
+    };
+    void poll();
+    return () => {
+      active = false;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [automatedRoom]);
+
   const handleAiJob = useCallback(
     async (message: Extract<ServerMessage, { type: "ai.job" }>) => {
       const role = message.job.role;
@@ -340,8 +370,11 @@ export function RoomView({ initialSession, profiles, turnConfigured, onLeave }: 
       setError("");
       const activeSession = sessionRef.current;
       const profileId =
-        activeSession.seatProfiles[message.seatId] ?? activeSession.seatProfiles["ai-1"] ?? "demo";
-      const record = profiles.find((candidate) => candidate.profile.id === profileId);
+        activeSession.seatProfiles[message.seatId] ?? activeSession.seatProfiles["ai-1"];
+      const record =
+        profileId === undefined
+          ? undefined
+          : profiles.find((candidate) => candidate.profile.id === profileId);
       if (record === undefined) {
         const failure: AiCompletionMessage = {
           type: "ai.failure",
@@ -510,6 +543,8 @@ export function RoomView({ initialSession, profiles, turnConfigured, onLeave }: 
         if (message.type === "room.snapshot") {
           const nextState = message.state as GameState;
           let currentSession = sessionRef.current;
+          setAutomatedRoom(message.automated === true);
+          setAutomatedNextRunAt(message.automatedNextRunAt);
           syncPreviewTurn(nextState.turnIndex);
           stateRef.current = nextState;
           setState(nextState);
@@ -633,7 +668,7 @@ export function RoomView({ initialSession, profiles, turnConfigured, onLeave }: 
       session.hostToken === undefined ||
       connection === "connecting" ||
       connection === "offline" ||
-      reviewRunRoom.current === state.roomId
+      reviewRunRoom.current === `${state.roomId}:${state.seed}`
     ) {
       return;
     }
@@ -647,7 +682,8 @@ export function RoomView({ initialSession, profiles, turnConfigured, onLeave }: 
     }
 
     const roomId = state.roomId;
-    reviewRunRoom.current = roomId;
+    const matchKey = `${state.roomId}:${state.seed}`;
+    reviewRunRoom.current = matchKey;
     const hostToken = session.hostToken;
     const published = [...(state.postGameReviews ?? [])];
     void (async () => {
@@ -660,12 +696,12 @@ export function RoomView({ initialSession, profiles, turnConfigured, onLeave }: 
             if (!published.some((review) => review.seatId === slot.actorId)) {
               published.push(existing);
             }
-            reviewDrafts.current.delete(reviewDraftKey(roomId, slot.actorId));
-            reviewPublishAttempts.current.delete(reviewDraftKey(roomId, slot.actorId));
+            reviewDrafts.current.delete(reviewDraftKey(roomId, state.seed, slot.actorId));
+            reviewPublishAttempts.current.delete(reviewDraftKey(roomId, state.seed, slot.actorId));
             continue;
           }
 
-          const draftKey = reviewDraftKey(roomId, slot.actorId);
+          const draftKey = reviewDraftKey(roomId, state.seed, slot.actorId);
           let draft = reviewDrafts.current.get(draftKey);
           if (draft === undefined) {
             draft = await createPostGameReviewDraft(state, slot, profiles, session, published);
@@ -692,10 +728,11 @@ export function RoomView({ initialSession, profiles, turnConfigured, onLeave }: 
           }
         }
       } finally {
-        if (reviewRunRoom.current === roomId) reviewRunRoom.current = undefined;
+        if (reviewRunRoom.current === matchKey) reviewRunRoom.current = undefined;
         const latest = stateRef.current;
         const incomplete =
           latest?.roomId === roomId &&
+          latest.seed === state.seed &&
           aiSlots.some(
             (slot) =>
               !(latest.postGameReviews ?? []).some((review) => review.seatId === slot.actorId)
@@ -718,6 +755,18 @@ export function RoomView({ initialSession, profiles, turnConfigured, onLeave }: 
     commitSession(next);
   };
   const leaveLobby = () => {
+    const sent = clientRef.current?.send({ type: "room.leave" }) === true;
+    if (sent) {
+      window.setTimeout(onLeave, 80);
+    } else {
+      onLeave();
+    }
+  };
+  const restartRelay = () => {
+    if (session.hostToken === undefined) return;
+    clientRef.current?.send({ type: "game.restart", hostToken: session.hostToken });
+  };
+  const leaveAutomatedRoom = () => {
     const sent = clientRef.current?.send({ type: "room.leave" }) === true;
     if (sent) {
       window.setTimeout(onLeave, 80);
@@ -767,11 +816,21 @@ export function RoomView({ initialSession, profiles, turnConfigured, onLeave }: 
           send={send}
           onSessionChange={changeSession}
           onLeave={leaveLobby}
+          {...(automatedRoom && automatedNextRunAt !== undefined ? { automatedNextRunAt } : {})}
         />
       ) : state.phase === "failed" ? (
-        <ModelFaultScreen state={state} onBack={onLeave} />
+        <ModelFaultScreen
+          state={state}
+          onBack={automatedRoom ? leaveAutomatedRoom : onLeave}
+          onRestart={session.hostToken === undefined ? undefined : restartRelay}
+        />
       ) : state.phase === "complete" || state.phase === "reveal" ? (
-        <RevealScreen state={state} onBack={onLeave} />
+        <RevealScreen
+          state={state}
+          automatedRoom={automatedRoom}
+          onBack={automatedRoom ? leaveAutomatedRoom : onLeave}
+          onRestart={session.hostToken === undefined ? undefined : restartRelay}
+        />
       ) : (
         <GameScreen
           state={state}
@@ -789,7 +848,15 @@ export function RoomView({ initialSession, profiles, turnConfigured, onLeave }: 
   );
 }
 
-function ModelFaultScreen({ state, onBack }: { state: GameState; onBack: () => void }) {
+function ModelFaultScreen({
+  state,
+  onBack,
+  onRestart
+}: {
+  state: GameState;
+  onBack: () => void;
+  onRestart?: (() => void) | undefined;
+}) {
   const { t } = useTranslation();
   const failure = state.failure;
   const errorCode = failure?.errorCode ?? "model-error";
@@ -850,10 +917,17 @@ function ModelFaultScreen({ state, onBack }: { state: GameState; onBack: () => v
             </dd>
           </div>
         </dl>
-        <button className="primary-button" type="button" onClick={onBack}>
-          <ArrowLeft size={17} />
-          {t("backToHome")}
-        </button>
+        <div className="model-fault-actions">
+          {onRestart !== undefined && (
+            <button className="secondary-button" type="button" onClick={onRestart}>
+              {t("playAgain")}
+            </button>
+          )}
+          <button className="primary-button" type="button" onClick={onBack}>
+            <ArrowLeft size={17} />
+            {t("backToHome")}
+          </button>
+        </div>
       </section>
     </main>
   );

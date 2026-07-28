@@ -5,3 +5,5 @@ declare const __DRAWGUESSAI_LOCAL_DEEPSEEK__: {
   baseUrl: string;
   model: string;
 } | null;
+
+declare const __DRAWGUESSAI_PROGRAMMATIC_DEMO_PROFILE__: unknown;

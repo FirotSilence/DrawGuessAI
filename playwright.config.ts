@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const crossBrowserSmoke = /home is responsive|AI theatre completes|blind relay hides content/;
+const workerStateDirectory = `../../test-results/wrangler-state-${Date.now()}`;
 
 export default defineConfig({
   testDir: "./apps/web/tests/e2e",
@@ -15,8 +16,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command:
-        "pnpm --filter @drawguessai/worker exec wrangler dev --port 43174 --persist-to .wrangler/playwright-state",
+      command: `pnpm --filter @drawguessai/worker exec wrangler dev --port 43174 --persist-to "${workerStateDirectory}" --var AUTOMATED_DEMO_MODE:true`,
       port: 43174,
       reuseExistingServer: true,
       timeout: 120_000
@@ -29,6 +29,7 @@ export default defineConfig({
       timeout: 120_000,
       env: {
         DRAWGUESSAI_WORKER_ORIGIN: "http://127.0.0.1:43174",
+        DRAWGUESSAI_ENABLE_TEST_DEMO: "true",
         VITE_CCSWITCH_VISION: "true",
         VITE_CCSWITCH_MAX_OBSERVATION_PASSES: "2"
       }
