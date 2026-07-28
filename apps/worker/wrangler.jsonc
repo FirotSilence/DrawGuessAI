@@ -15,6 +15,14 @@
       {
         "name": "ROOMS",
         "class_name": "RoomObject"
+      },
+      {
+        "name": "MATCHES",
+        "class_name": "MatchArchiveObject"
+      },
+      {
+        "name": "AUTO_ROOM",
+        "class_name": "AutoRoomScheduler"
       }
     ]
   },
@@ -22,10 +30,17 @@
     {
       "tag": "v1",
       "new_sqlite_classes": ["RoomObject"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["MatchArchiveObject", "AutoRoomScheduler"]
     }
   ],
+  "triggers": {
+    "crons": ["0 * * * *"]
+  },
   "vars": {
-    "APP_VERSION": "0.1.1",
+    "APP_VERSION": "0.2.0",
     "APP_ORIGIN": "",
     "ROOM_IDLE_SECONDS": "7200"
   },
@@ -36,6 +51,9 @@
   "env": {
     "production": {
       "name": "drawguessai-preview",
+      "triggers": {
+        "crons": ["0 * * * *"]
+      },
       "assets": {
         "directory": "../web/dist",
         "binding": "ASSETS",
@@ -47,6 +65,14 @@
           {
             "name": "ROOMS",
             "class_name": "RoomObject"
+          },
+          {
+            "name": "MATCHES",
+            "class_name": "MatchArchiveObject"
+          },
+          {
+            "name": "AUTO_ROOM",
+            "class_name": "AutoRoomScheduler"
           }
         ]
       },
@@ -66,6 +92,16 @@
           "simple": { "limit": 60, "period": 60 }
         },
         {
+          "name": "AUTO_ROOM_STATUS_RATE_LIMITER",
+          "namespace_id": "1005",
+          "simple": { "limit": 60, "period": 60 }
+        },
+        {
+          "name": "MATCH_LIKE_RATE_LIMITER",
+          "namespace_id": "1006",
+          "simple": { "limit": 10, "period": 60 }
+        },
+        {
           "name": "AI_RATE_LIMITER",
           "namespace_id": "1003",
           "simple": { "limit": 60, "period": 60 }
@@ -77,7 +113,7 @@
         }
       ],
       "vars": {
-        "APP_VERSION": "0.1.1",
+        "APP_VERSION": "0.2.0",
         "APP_ORIGIN": "",
         "ROOM_IDLE_SECONDS": "7200"
       }

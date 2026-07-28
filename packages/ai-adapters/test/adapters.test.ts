@@ -2080,12 +2080,77 @@ describe("AI adapters", () => {
       profile: profile("anthropic-compatible"),
       secret,
       job: drawJob,
+      requireDrawingFinish: true,
       fetchImpl
     });
 
     expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(result.status).toBe("ok");
     expect(result.commands?.some((command) => command.type === "stroke")).toBe(true);
+  });
+
+  it("retries a drawing that violates the authoritative canvas budget", async () => {
+    const drawJob: AiTurnJob = {
+      ...job,
+      jobId: "over-budget-drawing",
+      role: "draw",
+      imageDataUrl: undefined,
+      inputText: "a lighthouse",
+      drawPhase: "render"
+    };
+    const response = (commands: unknown[]) =>
+      new Response(
+        JSON.stringify({
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                jobId: drawJob.jobId,
+                status: "ok",
+                clearCanvas: false,
+                confidence: 0.7,
+                reaction: { kind: "confused", text: "I am trying to be careful." },
+                commands
+              })
+            }
+          ]
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    const overBudget = [
+      ...Array.from({ length: drawJob.budget.maxStrokes + 1 }, (_, index) => ({
+        type: "line",
+        id: `over-budget-${index}`,
+        start: [100, 120 + index],
+        end: [900, 120 + index]
+      })),
+      { type: "finish", id: "over-budget-finish", offsetMs: 100 }
+    ];
+    const valid = [
+      { type: "line", id: "lighthouse", start: [500, 100], end: [500, 650] },
+      { type: "finish", id: "valid-finish", offsetMs: 100 }
+    ];
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(response(overBudget))
+      .mockResolvedValueOnce(response(valid));
+
+    const result = await executeAiTurn({
+      profile: profile("anthropic-compatible"),
+      secret,
+      job: drawJob,
+      fetchImpl
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(result.status).toBe("ok");
+    expect(result.commands?.map((command) => command.id)).toEqual(["lighthouse", "valid-finish"]);
+    const retryCall = fetchImpl.mock.calls[1] as unknown as
+      [RequestInfo | URL, RequestInit?] | undefined;
+    const retryBody = typeof retryCall?.[1]?.body === "string" ? retryCall[1].body : "";
+    expect(retryBody).toContain("Your previous response was invalid");
+    expect(retryBody).toContain("stroke-budget");
+    expect(retryBody).not.toContain("Previous-pass validation feedback");
   });
 
   it("retries an empty initial drawing four times and reports a model fault", async () => {
@@ -2355,6 +2420,61 @@ describe("AI adapters", () => {
       maxAttempts: 2,
       errorCode: "network"
     });
+  });
+
+  it("retries a provider request that exceeds its attempt deadline before the turn expires", async () => {
+    vi.useFakeTimers();
+    try {
+      const valid = JSON.stringify({
+        jobId: job.jobId,
+        status: "ok",
+        guess: "a recovered request",
+        confidence: 0.7,
+        reaction: { kind: "confused", text: "I am back." }
+      });
+      const fetchImpl = vi
+        .fn()
+        .mockImplementationOnce(
+          (_input: RequestInfo | URL, init?: RequestInit) =>
+            new Promise<Response>((_resolve, reject) => {
+              init?.signal?.addEventListener(
+                "abort",
+                () => reject(new DOMException("Attempt timed out", "AbortError")),
+                { once: true }
+              );
+            })
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ choices: [{ message: { content: valid } }] }), {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          })
+        );
+      const onRetry = vi.fn();
+      const pending = executeAiTurn({
+        profile: profile("openai-compatible"),
+        secret,
+        job,
+        timeoutMs: 1_000,
+        attemptTimeoutMs: 400,
+        fetchImpl,
+        onRetry
+      });
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      const result = await pending;
+
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+      expect(onRetry).toHaveBeenCalledWith({
+        attempt: 2,
+        maxAttempts: 2,
+        errorCode: "timeout"
+      });
+      expect(result.status).toBe("ok");
+      expect(result.guess).toBe("a recovered request");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("turns CORS-like network failures and timeouts into safe results", async () => {

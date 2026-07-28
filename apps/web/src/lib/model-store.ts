@@ -17,6 +17,7 @@ const DB_NAME = "drawguessai-local-secrets";
 const STORE_NAME = "model-profiles";
 export const CCSWITCH_PROFILE_ID = "ccswitch-local";
 export const DEEPSEEK_DIRECT_PROFILE_ID = "deepseek-local-direct";
+const PROGRAMMATIC_DEMO_PROFILE_ID = "demo";
 
 const BUILT_IN_LOCAL_PROFILE_IDS: ReadonlySet<string> = new Set([
   CCSWITCH_PROFILE_ID,
@@ -32,23 +33,6 @@ function viteSetting(name: string): string | undefined {
   const value = environment[name];
   return typeof value === "string" ? value.trim() : undefined;
 }
-
-export const DEMO_PROFILE: ModelProfile = ModelProfileSchema.parse({
-  id: "demo",
-  label: "Programmatic Demo Sketcher",
-  protocol: "demo",
-  execution: "local",
-  baseUrl: "https://demo.invalid",
-  model: "built-in-demo",
-  capabilities: {
-    vision: true,
-    structuredOutput: "json-schema",
-    observationMode: "one-shot",
-    maxObservationPasses: 0,
-    drawingPlanMode: "inline"
-  },
-  enabled: true
-});
 
 function ccswitchRecord(): StoredModelProfile | undefined {
   if (!import.meta.env.DEV) return undefined;
@@ -168,9 +152,15 @@ export async function loadModelProfiles(): Promise<StoredModelProfile[]> {
     remembered = [];
   }
   const merged = new Map<string, StoredModelProfile>();
-  merged.set(DEMO_PROFILE.id, { profile: DEMO_PROFILE, remember: false });
+  if (__DRAWGUESSAI_PROGRAMMATIC_DEMO_PROFILE__ !== null) {
+    const profile = ModelProfileSchema.parse(__DRAWGUESSAI_PROGRAMMATIC_DEMO_PROFILE__);
+    merged.set(profile.id, { profile, remember: false });
+  }
   for (const record of remembered) merged.set(record.profile.id, record);
   for (const record of sessionProfiles) merged.set(record.profile.id, record);
+  if (__DRAWGUESSAI_PROGRAMMATIC_DEMO_PROFILE__ === null) {
+    merged.delete(PROGRAMMATIC_DEMO_PROFILE_ID);
+  }
   const localCcswitch = ccswitchRecord();
   if (localCcswitch !== undefined) merged.set(localCcswitch.profile.id, localCcswitch);
   const localDeepSeek = directDeepSeekRecord();
@@ -179,7 +169,8 @@ export async function loadModelProfiles(): Promise<StoredModelProfile[]> {
   writeSession(
     result.filter(
       (record) =>
-        record.profile.id !== DEMO_PROFILE.id && !isBuiltInLocalProfileId(record.profile.id)
+        record.profile.id !== PROGRAMMATIC_DEMO_PROFILE_ID &&
+        !isBuiltInLocalProfileId(record.profile.id)
     )
   );
   return result;
@@ -200,7 +191,7 @@ export async function saveModelProfile(record: StoredModelProfile): Promise<void
 }
 
 export async function deleteModelProfile(profileId: string): Promise<void> {
-  if (profileId === DEMO_PROFILE.id || isBuiltInLocalProfileId(profileId)) return;
+  if (profileId === PROGRAMMATIC_DEMO_PROFILE_ID || isBuiltInLocalProfileId(profileId)) return;
   writeSession(readSession().filter((item) => item.profile.id !== profileId));
   await (await database()).delete(STORE_NAME, profileId);
 }
@@ -214,7 +205,9 @@ export function isModelProfileReady(record: StoredModelProfile): boolean {
   );
 }
 
-export function preferredModelProfileId(profiles: readonly StoredModelProfile[]): string {
+export function preferredModelProfileId(
+  profiles: readonly StoredModelProfile[]
+): string | undefined {
   const ready = profiles.filter(isModelProfileReady);
   const relayReady = ready.filter(
     (record) =>
@@ -225,8 +218,7 @@ export function preferredModelProfileId(profiles: readonly StoredModelProfile[])
     relayReady.find((record) => record.profile.execution === "server")?.profile.id ??
     relayReady.find((record) => record.profile.id === CCSWITCH_PROFILE_ID)?.profile.id ??
     relayReady.find((record) => record.profile.protocol !== "demo")?.profile.id ??
-    relayReady[0]?.profile.id ??
-    DEMO_PROFILE.id
+    relayReady[0]?.profile.id
   );
 }
 

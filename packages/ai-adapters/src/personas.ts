@@ -12,6 +12,61 @@ export interface AiPersona {
   fallback: { "zh-CN": string; en: string };
 }
 
+export const AI_DISPLAY_NAMES: Readonly<Record<"zh-CN" | "en", readonly string[]>> = {
+  "zh-CN": [
+    "小北",
+    "阿岚",
+    "木木",
+    "夏梨",
+    "可可",
+    "七喜",
+    "小满",
+    "青禾",
+    "早早",
+    "米粒",
+    "乔安",
+    "星野",
+    "栗子",
+    "阿葵",
+    "洛洛",
+    "半夏",
+    "知秋",
+    "小川",
+    "元宝",
+    "苏打",
+    "南星",
+    "安可",
+    "初九",
+    "团子"
+  ],
+  en: [
+    "Alex",
+    "Jamie",
+    "Riley",
+    "Morgan",
+    "Casey",
+    "Taylor",
+    "Jordan",
+    "Quinn",
+    "Avery",
+    "Robin",
+    "Skyler",
+    "Cameron",
+    "Rowan",
+    "Sasha",
+    "Remy",
+    "Drew",
+    "Bailey",
+    "Parker",
+    "Jules",
+    "Ellis",
+    "Finley",
+    "Devon",
+    "Marlow",
+    "Kit"
+  ]
+};
+
 export const AI_PERSONAS: readonly AiPersona[] = [
   {
     id: "maestro",

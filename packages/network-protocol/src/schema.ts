@@ -152,6 +152,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
       prompt: GameStartPromptSchema.optional()
     })
     .strict(),
+  z.object({ type: z.literal("game.restart"), hostToken: z.string() }).strict(),
   z
     .object({
       type: z.literal("prompt.select"),
@@ -236,7 +237,9 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
       type: z.literal("room.snapshot"),
       state: z.unknown(),
       peers: z.array(z.object({ id: z.string(), displayName: z.string(), role: z.string() })),
-      aiSeats: z.array(PublicAiSeatSchema).max(12).optional()
+      aiSeats: z.array(PublicAiSeatSchema).max(12).optional(),
+      automated: z.boolean().optional(),
+      automatedNextRunAt: z.number().int().nonnegative().optional()
     })
     .strict(),
   z.object({ type: z.literal("room.event"), envelope: GameEnvelopeSchema }).strict(),

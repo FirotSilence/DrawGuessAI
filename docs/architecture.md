@@ -9,7 +9,10 @@ flowchart LR
   Browser[React browser client] -->|authoritative events| WS[Hibernatable WebSocket]
   Browser <-->|cursor and live stroke previews| RTC[WebRTC mesh]
   WS --> Room[SQLite Durable Object per room]
-  Room --> Replay[7-day tokenized replay]
+  Room --> Archive[Match archive Durable Object]
+  Browser -->|recent list, likes, replay| Archive
+  Cron[Hourly Cron + alarm backup] --> Auto[Fixed AI room scheduler]
+  Auto --> Room
   Browser -->|local profile, direct fetch| Provider[Compatible AI endpoint]
   Browser -->|allow-listed profile only| WorkerAI[Worker server AI route]
   WorkerAI --> Provider
@@ -42,10 +45,15 @@ Every AI timeline position has its own actor ID, persona, name, and avatar. The 
 1. A create request generates an eight-character room code and independent 192-bit reconnect and host credentials.
 2. One SQLite Durable Object owns that room code.
 3. The room progresses through `lobby -> prompt -> turn -> inspect -> reaction -> reveal -> complete`; an unrecoverable AI drawing fault moves `turn` or `inspect` to terminal `failed`.
-4. Durable Object alarms submit the last validated visible human or AI drawing draft on timeout, stop an AI drawing only when no valid draft exists, submit bounded guess fallbacks, advance reaction beats, and delete expired replay data.
-5. Completion creates an unguessable replay token. The default alarm deletes the room after seven days.
+4. Durable Object alarms submit the last validated visible human or AI drawing draft on timeout, stop an AI drawing only when no valid draft exists, submit bounded guess fallbacks, and advance reaction beats.
+5. Completion creates an unguessable replay token and first writes a self-contained archive envelope to a room-local SQLite outbox. Delivery to the match archive is idempotent by replay token and retries with bounded exponential backoff, so a rematch cannot overwrite a replay that is waiting for delivery. Unliked records follow the room replay retention setting. Three independent anonymous voters are required for the bounded long-term retention pool. Archive listing uses a `(completed_at, token)` cursor and bounded pages.
+6. Hosts can reset a completed or failed relay in place. The room keeps its participants, host ownership, configuration, and timeline while clearing per-game artifacts, reactions, reviews, and transient AI work.
 
 Lobby departures are authoritative events: the member and reconnect credential are removed, the blind timeline is rebuilt, and an abandoning host transfers ownership to a connected successor or closes an empty room. A disconnected human still scheduled when the host starts is removed and replaced through the deterministic AI-filled timeline instead of producing a ghost turn.
+
+## Automated room
+
+`MACH8888` is a fixed spectator-only AI room. Its default game uses the Chinese curated prompt bank, an eight-turn AI-theatre relay with eight distinct AI seats, spectators enabled, no AI observation passes, and ten seconds of AI drawing playback. The seats receive distinct randomized display names from the same pool as ordinary rooms; a persisted identity seed keeps those names stable across hourly rematches, while an upgrade replaces legacy numbered labels at the next safe lobby boundary. After the relay, the same AI seats publish the post-game roundtable before the match is archived. An hourly Worker Cron trigger wakes a dedicated scheduler Durable Object; its alarm is a second wake-up path, and the scheduler deduplicates both deliveries within an hour. Failed runs retry every two minutes, up to three attempts in the current hour, before moving to the next hour boundary. The public status endpoint reads scheduler state only: it cannot initialize a room, write storage, or schedule an alarm. The room selects a deployment-owned multimodal model, allows up to two minutes for a drawing request and thirty seconds for a guess. A drawing provider attempt is capped at one minute and a guess attempt at fifteen seconds, so a stalled provider call can retry inside the authoritative turn deadline. It never replaces a failed model response with a simulated drawing. Player joins are rejected server-side in every phase, legacy non-spectator members are removed, and disconnected spectators are pruned after a short reconnect grace period.
 
 ## AI execution
 

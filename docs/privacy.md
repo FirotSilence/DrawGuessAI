@@ -32,8 +32,12 @@ Completed rooms are available only through an unguessable replay token and expir
 
 The featured replay linked from the README is a deliberately selected static public sample shipped with the release assets, so it is not subject to Durable Object expiry. It contains only already-public game state and events, with no provider key, endpoint, request body, host token, or reconnect token. All ordinary room replays still follow the configured retention period.
 
+Public replay likes store hashes of the browser viewer identifier and the request network key. Raw network addresses are not written to the match archive. A network can contribute at most one vote to a replay, and at least three independent votes are required before the replay enters the bounded long-term retention pool. Like requests are also rate limited across replay tokens.
+
 README 中的精选回放是一个明确选取、随发布资源一同分发的静态公开样例，因此不受 Durable Object 到期清理影响。它只包含该局已经公开的游戏状态与事件，不包含模型密钥、端点、请求正文、房主令牌或重连令牌。除此之外，普通房间回放仍按配置的保留期到期删除。
+
+公开回放点赞只保存浏览器查看者标识和请求网络标识的哈希值，不会把原始网络地址写入对局存档。同一网络对同一回放最多贡献一票，至少三个独立投票者才能进入有容量上限的长期保留池；点赞请求还会跨回放统一限流。
 
 ## Non-goals / 非目标
 
-Version 0.1 does not promise strict anti-cheat protection, anonymity from other WebRTC peers, encrypted replay content beyond TLS, provider privacy, or protection from a compromised browser/deployment.
+Version 0.2 does not promise strict anti-cheat protection, anonymity from other WebRTC peers, encrypted replay content beyond TLS, provider privacy, or protection from a compromised browser/deployment.

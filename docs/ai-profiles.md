@@ -94,10 +94,10 @@ The hosted preview currently uses MiniMax as one deployment choice, not as an ap
 SERVER_AI_API_KEY=replace-me
 SERVER_AI_PROFILE_ID=server-minimax-m3
 SERVER_AI_LABEL=MiniMax · MiniMax-M3
-SERVER_AI_PROTOCOL=anthropic-compatible
+SERVER_AI_PROTOCOL=openai-compatible
 SERVER_AI_AUTH_MODE=bearer
-SERVER_AI_BASE_URL=https://api.minimaxi.com/anthropic
-SERVER_AI_MODEL=MiniMax-M3[1M]
+SERVER_AI_BASE_URL=https://api.minimaxi.com/v1
+SERVER_AI_MODEL=MiniMax-M3
 SERVER_AI_VISION=true
 SERVER_AI_STRUCTURED_OUTPUT=none
 SERVER_AI_MAX_OBSERVATION_PASSES=2
@@ -105,7 +105,7 @@ SERVER_AI_REASONING_MODE=disabled
 SERVER_AI_SUPPORTED_ROLES=prompt,draw,guess,review
 ```
 
-The older `MINIMAX_*` variable names remain accepted so existing deployments do not lose their configured profile during an upgrade; new deployments should use `SERVER_AI_*`. Direct response mode avoids spending the compact turn budget on provider thinking before JSON is emitted. Provider thinking blocks are discarded if an endpoint returns them; they never enter the UI, room stream, logs, or replay.
+MiniMax-M3 image understanding uses its OpenAI-compatible Chat Completions endpoint. It accepts an `image_url` content part, including a base64 data URL, while its Anthropic-compatible route is text-only. Use `https://api.minimaxi.com/v1` for China-region accounts or `https://api.minimax.io/v1` elsewhere. The older `MINIMAX_*` variable names remain accepted so existing deployments do not lose their configured profile during an upgrade; legacy Anthropic base URLs and `MiniMax-M3[1M]` values are automatically mapped to the matching visual endpoint and `MiniMax-M3`. New deployments should use `SERVER_AI_*`. Direct response mode avoids spending the compact turn budget on provider thinking before JSON is emitted. Provider thinking blocks are discarded if an endpoint returns them; they never enter the UI, room stream, logs, or replay.
 
 MiniMax error `2056` is classified separately as `token-plan-window-exhausted`. It means the current rolling Token Plan resource window is unavailable, which is distinct from an exhausted account balance or weekly allowance. The adapter does not repeatedly call the provider for this non-transient-in-turn condition, and the game UI explains the distinction instead of reporting a generic account quota failure.
 

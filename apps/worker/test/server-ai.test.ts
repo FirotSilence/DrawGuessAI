@@ -13,7 +13,8 @@ import {
   configuredWorkersAiProfiles,
   executeServerProfile,
   executeWorkersAi,
-  publicServerProfiles
+  publicServerProfiles,
+  selectAutomatedServerProfile
 } from "../src/server-ai";
 
 const budget = {
@@ -87,6 +88,11 @@ function workersAi(run: ReturnType<typeof vi.fn>): Ai {
 }
 
 describe("server AI profiles", () => {
+  it("selects a real server model for automated rooms and never invents a demo profile", () => {
+    expect(selectAutomatedServerProfile([], true)?.id).toBe(WORKERS_AI_PROFILE_ID);
+    expect(selectAutomatedServerProfile([], false)).toBeUndefined();
+  });
+
   it("builds a provider-neutral default profile from scalar environment settings", () => {
     const token = "generic-token";
     const profiles = configuredServerProfiles({
@@ -130,7 +136,7 @@ describe("server AI profiles", () => {
     });
   });
 
-  it("keeps the MiniMax variables as a backwards-compatible deployment alias", () => {
+  it("migrates the legacy MiniMax alias to the image-capable OpenAI endpoint", () => {
     const token = "x".repeat(756);
     const profiles = configuredServerProfiles({
       MINIMAX_API_KEY: token,
@@ -144,12 +150,14 @@ describe("server AI profiles", () => {
       authMode: "bearer",
       profile: {
         id: MINIMAX_SERVER_PROFILE_ID,
-        protocol: "anthropic-compatible",
-        model: "MiniMax-M3[1M]",
+        protocol: "openai-compatible",
+        baseUrl: "https://api.minimaxi.com/v1",
+        model: "MiniMax-M3",
         capabilities: {
           vision: true,
           observationMode: "checkpoint",
           maxObservationPasses: 2,
+          reasoningMode: "disabled",
           supportedRoles: ["prompt", "draw", "guess", "review"]
         }
       }
@@ -172,6 +180,48 @@ describe("server AI profiles", () => {
           enabled: true
         })
       ).not.toThrow();
+    }
+  });
+
+  it("sends legacy MiniMax guesses to the visual chat-completions API", async () => {
+    const token = "minimax-token";
+    const profiles = configuredServerProfiles({
+      MINIMAX_API_KEY: token,
+      MINIMAX_BASE_URL: "https://api.minimaxi.com/anthropic",
+      MINIMAX_MODEL: "MiniMax-M3[1M]"
+    });
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const endpoint =
+        typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      expect(endpoint).toBe("https://api.minimaxi.com/v1/chat/completions");
+      expect(new Headers(init?.headers).get("authorization")).toBe(`Bearer ${token}`);
+      if (typeof init?.body !== "string") throw new Error("Expected a JSON request body");
+      const body = JSON.parse(init.body) as Record<string, unknown>;
+      expect(body).toMatchObject({
+        model: "MiniMax-M3",
+        max_completion_tokens: 512,
+        thinking: { type: "disabled" }
+      });
+      expect(body.max_tokens).toBeUndefined();
+      expect(JSON.stringify(body.messages)).toContain(guessJob.imageDataUrl);
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: resultText("a picture-aware answer") } }]
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      await expect(
+        executeServerProfile(profiles, workersAi(vi.fn()), MINIMAX_SERVER_PROFILE_ID, guessJob)
+      ).resolves.toMatchObject({ status: "ok", guess: "a picture-aware answer" });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
     }
   });
 
@@ -817,6 +867,67 @@ describe("server AI profiles", () => {
     expect(run).toHaveBeenCalledTimes(4);
     expect(result.status).toBe("fallback");
     expect(result.errorCode).toBe("empty-drawing");
+  });
+
+  it("repairs an automated drawing that omits its final finish command", async () => {
+    const drawing = (commands: unknown[]) =>
+      JSON.stringify({
+        jobId: drawJob.jobId,
+        status: "ok",
+        clearCanvas: false,
+        commands,
+        confidence: 0.7,
+        reaction: { kind: "spark", text: "I think that landed." }
+      });
+    const run = vi
+      .fn()
+      .mockResolvedValueOnce({
+        response: drawing([
+          {
+            type: "stroke",
+            id: "unfinished-wheel",
+            tool: "pen",
+            color: "#202124",
+            width: 8,
+            points: [
+              [180, 500],
+              [360, 500]
+            ],
+            offsetMs: 0
+          }
+        ])
+      })
+      .mockResolvedValueOnce({
+        response: drawing([
+          {
+            type: "stroke",
+            id: "finished-wheel",
+            tool: "pen",
+            color: "#202124",
+            width: 8,
+            points: [
+              [180, 500],
+              [360, 500]
+            ],
+            offsetMs: 0
+          },
+          { type: "finish", id: "finished-wheel-end", offsetMs: 100 }
+        ])
+      });
+
+    const result = await executeServerProfile(
+      [],
+      workersAi(run),
+      WORKERS_AI_PROFILE_ID,
+      drawJob,
+      WORKERS_AI_PROFILES,
+      undefined,
+      undefined,
+      { requireDrawingFinish: true }
+    );
+
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(result.commands?.at(-1)?.type).toBe("finish");
   });
 
   it("keeps a Workers AI repair inside the original turn deadline", async () => {

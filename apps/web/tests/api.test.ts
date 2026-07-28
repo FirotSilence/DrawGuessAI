@@ -2,7 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AiTurnJob } from "@drawguessai/ai-adapters";
 
-import { executeServerAi, fetchIceServers } from "../src/lib/api";
+import {
+  executeServerAi,
+  fetchIceServers,
+  fetchMatches,
+  fetchReplay,
+  likeMatch
+} from "../src/lib/api";
 import type { RoomSession } from "../src/lib/session-store";
 
 const job: AiTurnJob = {
@@ -27,6 +33,93 @@ const job: AiTurnJob = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("server AI API", () => {
+  it("paginates the public match archive and sends an anonymous viewer grant for likes", async () => {
+    const values = new Map<string, string>([
+      ["drawguessai:match-viewer-id", "viewer-identifier-123456"]
+    ]);
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value)
+    });
+    const match = {
+      token: "ABCDEFGH.abcdefghijklmnopqrstuv",
+      roomId: "ABCDEFGH",
+      startedAt: 1,
+      completedAt: 2,
+      permanent: false,
+      likeCount: 0,
+      liked: false,
+      mode: "ai-theatre",
+      locale: "en",
+      prompt: "a kite in rain",
+      playerCount: 4,
+      turnCount: 4
+    };
+    const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify(init?.method === "POST" ? { ...match, liked: true } : { items: [match] }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          }
+        )
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchMatches({ limit: 6 })).resolves.toMatchObject({ items: [match] });
+    await likeMatch(match.token);
+
+    const input = fetchMock.mock.calls[0]?.[0];
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input instanceof Request
+            ? input.url
+            : "";
+    expect(url).toContain("limit=6");
+    expect(url).toContain("viewerId=viewer-identifier-123456");
+    const request = fetchMock.mock.calls[1]?.[1];
+    expect(request?.method).toBe("POST");
+    if (typeof request?.body !== "string") throw new Error("Expected a JSON request body");
+    expect(JSON.parse(request.body)).toEqual({ viewerId: "viewer-identifier-123456" });
+  });
+
+  it("uses the same anonymous viewer grant when loading a replay", async () => {
+    const values = new Map<string, string>([
+      ["drawguessai:match-viewer-id", "viewer-identifier-123456"]
+    ]);
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value)
+    });
+    const fetchMock = vi.fn((_input: RequestInfo | URL) =>
+      Promise.resolve(
+        new Response(JSON.stringify({ state: {} }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchReplay("ABCDEFGH.abcdefghijklmnopqrstuv");
+
+    const input = fetchMock.mock.calls[0]?.[0];
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input instanceof Request
+            ? input.url
+            : "";
+    expect(url).toContain("viewerId=viewer-identifier-123456");
+  });
+
   it("serializes only participant credentials for ICE configuration", async () => {
     const session: RoomSession = {
       roomId: "ROOM1234",

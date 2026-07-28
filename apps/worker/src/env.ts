@@ -1,14 +1,19 @@
 export interface Env {
   ROOMS: DurableObjectNamespace;
+  MATCHES: DurableObjectNamespace;
+  AUTO_ROOM: DurableObjectNamespace;
   ASSETS: Fetcher;
   AI?: Ai;
   ROOM_CREATION_RATE_LIMITER?: RateLimit;
   ROOM_JOIN_RATE_LIMITER?: RateLimit;
+  AUTO_ROOM_STATUS_RATE_LIMITER?: RateLimit;
+  MATCH_LIKE_RATE_LIMITER?: RateLimit;
   AI_RATE_LIMITER?: RateLimit;
   CREDENTIAL_RATE_LIMITER?: RateLimit;
   APP_VERSION: string;
   APP_ORIGIN: string;
   ROOM_IDLE_SECONDS: string;
+  AUTOMATED_DEMO_MODE?: string;
   SERVER_AI_PROFILES_JSON?: string;
   WORKERS_AI_PROFILES_JSON?: string;
   SERVER_AI_API_KEY?: string;

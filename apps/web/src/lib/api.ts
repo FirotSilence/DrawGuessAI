@@ -38,11 +38,74 @@ export const AppConfigSchema = z
       )
       .default([]),
     turnConfigured: z.boolean(),
-    replayDays: z.number().int()
+    replayDays: z.number().int(),
+    automatedRoomCode: z.string().length(8).optional()
   })
   .strict();
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;
+
+export const MatchSummarySchema = z
+  .object({
+    token: z.string().min(20).max(200),
+    roomId: z.string().min(1).max(100),
+    startedAt: z.number().int().nonnegative(),
+    completedAt: z.number().int().nonnegative(),
+    expiresAt: z.number().int().nonnegative().optional(),
+    permanent: z.boolean(),
+    likeCount: z.number().int().nonnegative(),
+    liked: z.boolean(),
+    mode: z.enum(["ai-theatre", "blind-relay"]),
+    locale: z.enum(["zh-CN", "en"]),
+    prompt: z.string().min(1).max(160),
+    playerCount: z.number().int().min(1).max(12),
+    turnCount: z.number().int().min(1).max(12)
+  })
+  .strict();
+
+export const MatchPageSchema = z
+  .object({
+    items: z.array(MatchSummarySchema),
+    nextCursor: z.string().optional()
+  })
+  .strict();
+
+export const AutomatedRoomSchema = z
+  .object({
+    roomCode: z.string().length(8),
+    available: z.boolean(),
+    status: z.enum(["not-initialized", "scheduled", "running", "retrying", "settling"]),
+    nextRunAt: z.number().int().nonnegative(),
+    updatedAt: z.number().int().nonnegative().optional(),
+    attempt: z.number().int().positive().optional(),
+    error: z.string().optional(),
+    phase: z.string().optional(),
+    replayToken: z.string().min(20).max(200).optional()
+  })
+  .strict();
+
+export type MatchSummary = z.infer<typeof MatchSummarySchema>;
+export type MatchPage = z.infer<typeof MatchPageSchema>;
+export type AutomatedRoom = z.infer<typeof AutomatedRoomSchema>;
+
+const MATCH_VIEWER_ID_KEY = "drawguessai:match-viewer-id";
+
+function matchViewerId(): string {
+  let storage: Pick<Storage, "getItem" | "setItem"> | undefined;
+  try {
+    const candidate = globalThis.localStorage;
+    if (typeof candidate?.getItem === "function" && typeof candidate?.setItem === "function") {
+      storage = candidate;
+    }
+  } catch {
+    storage = undefined;
+  }
+  const existing = storage?.getItem(MATCH_VIEWER_ID_KEY) ?? null;
+  if (existing !== null && /^[A-Za-z0-9_-]{16,96}$/.test(existing)) return existing;
+  const value = crypto.randomUUID();
+  storage?.setItem(MATCH_VIEWER_ID_KEY, value);
+  return value;
+}
 
 export class ApiRequestError extends Error {
   constructor(
@@ -143,5 +206,29 @@ export async function executeServerAi(
 }
 
 export async function fetchReplay(token: string): Promise<unknown> {
-  return jsonRequest<unknown>(`/api/replays/${encodeURIComponent(token)}`);
+  const query = new URLSearchParams({ viewerId: matchViewerId() });
+  return jsonRequest<unknown>(`/api/replays/${encodeURIComponent(token)}?${query.toString()}`);
+}
+
+export async function fetchMatches(options?: {
+  limit?: number;
+  cursor?: string;
+}): Promise<MatchPage> {
+  const query = new URLSearchParams({ viewerId: matchViewerId() });
+  if (options?.limit !== undefined) query.set("limit", String(options.limit));
+  if (options?.cursor !== undefined) query.set("cursor", options.cursor);
+  return MatchPageSchema.parse(await jsonRequest<unknown>(`/api/matches?${query.toString()}`));
+}
+
+export async function likeMatch(token: string): Promise<MatchSummary> {
+  return MatchSummarySchema.parse(
+    await jsonRequest<unknown>(`/api/matches/${encodeURIComponent(token)}/like`, {
+      method: "POST",
+      body: JSON.stringify({ viewerId: matchViewerId() })
+    })
+  );
+}
+
+export async function fetchAutomatedRoom(): Promise<AutomatedRoom> {
+  return AutomatedRoomSchema.parse(await jsonRequest<unknown>("/api/automated-room/status"));
 }

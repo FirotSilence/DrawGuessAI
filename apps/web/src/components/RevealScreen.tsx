@@ -3,11 +3,13 @@ import type { GameState, PostGameReview, TimelineSlot } from "@drawguessai/game-
 import {
   ArrowLeft,
   Download,
+  Heart,
   Link2,
   LoaderCircle,
   LogOut,
   MessageCircleMore,
   Paintbrush,
+  RotateCcw,
   Search,
   Trophy,
   UserRound
@@ -34,7 +36,15 @@ interface RevealScreenProps {
   state: GameState;
   replayPayload?: unknown;
   featuredReplay?: boolean;
+  permanentReplay?: boolean;
+  automatedRoom?: boolean;
+  roundtablePending?: boolean;
+  likeCount?: number | undefined;
+  liked?: boolean | undefined;
+  liking?: boolean | undefined;
+  onLike?: (() => void) | undefined;
   onBack: () => void;
+  onRestart?: (() => void) | undefined;
 }
 
 function RoundtablePost({
@@ -187,7 +197,15 @@ export function RevealScreen({
   state,
   replayPayload,
   featuredReplay = false,
-  onBack
+  permanentReplay = false,
+  automatedRoom = false,
+  roundtablePending = false,
+  likeCount,
+  liked = false,
+  liking = false,
+  onLike,
+  onBack,
+  onRestart
 }: RevealScreenProps) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
@@ -199,7 +217,14 @@ export function RevealScreen({
   const humanSeatCount = tableActors.length - aiSeatCount;
   const settledSeatCount = humanSeatCount + reviews.length;
   const tableResult = roundtableResult(state, reviews);
-  const roundtableSettled = reviews.length >= aiSeatCount || replayPayload !== undefined;
+  const readOnlyResult = replayPayload !== undefined || automatedRoom;
+  const roundtableInProgress =
+    roundtablePending ||
+    (automatedRoom && state.phase === "reveal" && reviews.length < aiSeatCount);
+  const roundtableSettled =
+    reviews.length >= aiSeatCount || (readOnlyResult && !roundtableInProgress);
+  const showRoundtable =
+    tableActors.length > 0 && (!readOnlyResult || reviews.length > 0 || roundtableInProgress);
 
   const exportReplay = () => {
     const payload = replayPayload ?? {
@@ -251,6 +276,26 @@ export function RevealScreen({
               {copied ? t("copied") : t("copyReplay")}
             </button>
           )}
+          {onLike !== undefined && likeCount !== undefined && (
+            <button
+              className={`secondary-button replay-like-button${liked ? " is-liked" : ""}`}
+              type="button"
+              aria-label={t(liked ? "matchLiked" : "likeMatch")}
+              aria-pressed={liked}
+              title={t(liked ? "matchLiked" : "likeMatch")}
+              disabled={liked || liking}
+              onClick={onLike}
+            >
+              <Heart size={17} fill={liked ? "currentColor" : "none"} />
+              <span>{likeCount}</span>
+            </button>
+          )}
+          {onRestart !== undefined && (
+            <button className="secondary-button" type="button" onClick={onRestart}>
+              <RotateCcw size={17} />
+              {t("playAgain")}
+            </button>
+          )}
           <button className="primary-button" type="button" onClick={exportReplay}>
             <Download size={17} />
             {t("exportReplay")}
@@ -268,7 +313,7 @@ export function RevealScreen({
                 <strong>{slot.displayName}</strong>
                 <small>
                   {slot.role === "draw" ? <Paintbrush size={15} /> : <Search size={15} />}
-                  {t(slot.role === "draw" ? "drawing" : "guessing")}
+                  {t(slot.role === "draw" ? "revealDrawing" : "revealGuess")}
                 </small>
               </header>
               {artifact?.kind === "drawing" ? (
@@ -282,7 +327,7 @@ export function RevealScreen({
           );
         })}
       </section>
-      {tableActors.length > 0 && (
+      {showRoundtable && (
         <section className="postgame-reviews">
           <header>
             <span>
@@ -317,14 +362,11 @@ export function RevealScreen({
                 />
               );
             })}
-            {reviews.length < aiSeatCount && replayPayload === undefined && (
+            {reviews.length < aiSeatCount && (!readOnlyResult || roundtableInProgress) && (
               <div className="review-loading" role="status">
                 <LoaderCircle className="spin" size={18} />
                 {t("aiReviewsLoading")}
               </div>
-            )}
-            {aiSeatCount > 0 && reviews.length === 0 && replayPayload !== undefined && (
-              <p className="muted-copy">{t("noAiReviews")}</p>
             )}
           </div>
           <footer className="settlement-footer">
@@ -340,7 +382,15 @@ export function RevealScreen({
         />
       )}
       <footer className="replay-footer">
-        <span>{t(featuredReplay ? "featuredReplayPermanent" : "replayExpires")}</span>
+        <span>
+          {t(
+            featuredReplay
+              ? "featuredReplayPermanent"
+              : permanentReplay
+                ? "permanentReplay"
+                : "replayExpires"
+          )}
+        </span>
         <strong>v{state.protocolVersion}</strong>
       </footer>
     </main>

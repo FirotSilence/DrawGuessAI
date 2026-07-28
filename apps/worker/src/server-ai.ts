@@ -477,6 +477,36 @@ const LEGACY_MINIMAX_SETTING_KEYS = [
   "MINIMAX_MAX_OBSERVATION_PASSES"
 ] as const satisfies readonly (keyof ServerAiEnvironment)[];
 
+const MINIMAX_OPENAI_BASE_URL = "https://api.minimax.io/v1";
+const MINIMAX_CHINA_OPENAI_BASE_URL = "https://api.minimaxi.com/v1";
+
+function miniMaxOpenAiBaseUrl(configuredBaseUrl: string | undefined): string {
+  const baseUrl = configuredBaseUrl?.trim();
+  if (baseUrl === undefined || baseUrl === "") return MINIMAX_OPENAI_BASE_URL;
+  try {
+    const url = new URL(baseUrl);
+    const isLegacyHost = ["api.minimaxi.com", "api.minimax.io"].includes(
+      url.hostname.toLowerCase()
+    );
+    const isLegacyAnthropicPath = /^\/anthropic(?:\/v1)?(?:\/messages)?\/?$/iu.test(url.pathname);
+    if (isLegacyHost && isLegacyAnthropicPath) {
+      return url.hostname.toLowerCase() === "api.minimaxi.com"
+        ? MINIMAX_CHINA_OPENAI_BASE_URL
+        : MINIMAX_OPENAI_BASE_URL;
+    }
+  } catch {
+    // Let ModelProfileSchema report malformed deployment configuration below.
+  }
+  return baseUrl;
+}
+
+function miniMaxModel(model: string | undefined): string {
+  const value = model?.trim();
+  return value === undefined || value === "" || /^minimax-m3\[1m\]$/iu.test(value)
+    ? "MiniMax-M3"
+    : value;
+}
+
 function defaultServerProfileLabel(model: string): string {
   return [...`Server · ${model}`].slice(0, 40).join("");
 }
@@ -564,16 +594,17 @@ function miniMaxServerProfile(
   const profile = ModelProfileSchema.safeParse({
     id: MINIMAX_SERVER_PROFILE_ID,
     label: "MiniMax · MiniMax-M3",
-    protocol: "anthropic-compatible",
+    protocol: "openai-compatible",
     execution: "server",
-    baseUrl: environment.MINIMAX_BASE_URL?.trim() || "https://api.minimaxi.com/anthropic",
-    model: environment.MINIMAX_MODEL?.trim() || "MiniMax-M3",
+    baseUrl: miniMaxOpenAiBaseUrl(environment.MINIMAX_BASE_URL),
+    model: miniMaxModel(environment.MINIMAX_MODEL),
     capabilities: {
       vision: true,
       structuredOutput: "none",
       observationMode: maxObservationPasses === 0 ? "one-shot" : "checkpoint",
       maxObservationPasses,
       drawingPlanMode: "inline",
+      reasoningMode: "disabled",
       supportedRoles: ["prompt", "draw", "guess", "review"]
     },
     secretRef: "server-minimax-m3-key",
@@ -662,6 +693,27 @@ export function publicServerProfiles(
     );
   }
   return profiles;
+}
+
+export function selectAutomatedServerProfile(
+  records: readonly ServerProfileRecord[],
+  workersAiConfigured: boolean,
+  workersAiProfiles: readonly WorkersAiProfileDefinition[] = WORKERS_AI_PROFILES
+) {
+  const profiles = publicServerProfiles(records, workersAiConfigured, workersAiProfiles).filter(
+    (profile) =>
+      profile.capabilities.vision &&
+      modelSupportsRole(profile.capabilities, "draw") &&
+      modelSupportsRole(profile.capabilities, "guess")
+  );
+  const configuredIds = new Set(
+    records.filter(({ profile }) => profile.enabled).map(({ profile }) => profile.id)
+  );
+  return (
+    profiles.find(({ id }) => configuredIds.has(id)) ??
+    profiles.find(({ id }) => id === WORKERS_AI_PROFILE_ID) ??
+    profiles[0]
+  );
 }
 
 type WorkersAiContent =
@@ -806,7 +858,9 @@ export async function executeWorkersAi(
   profileId: string,
   inputJob: AiTurnJob,
   timeoutMs?: number,
-  profiles: readonly WorkersAiProfileDefinition[] = WORKERS_AI_PROFILES
+  profiles: readonly WorkersAiProfileDefinition[] = WORKERS_AI_PROFILES,
+  attemptTimeoutMs?: number,
+  validationOptions: { requireDrawingFinish?: boolean } = {}
 ): Promise<AiTurnResult> {
   const profile = profiles.find(({ id }) => id === profileId);
   if (profile === undefined) {
@@ -825,6 +879,10 @@ export async function executeWorkersAi(
   }
 
   const deadline = Date.now() + effectiveTimeoutMs;
+  const effectiveAttemptTimeoutMs =
+    attemptTimeoutMs === undefined
+      ? undefined
+      : Math.max(1, Math.min(attemptTimeoutMs, effectiveTimeoutMs));
   const maxAttempts = maxAiResponseAttemptsForJob(job);
   let repairNote: string | undefined;
   let lastError: unknown = new AiAdapterError("invalid-response", "No Workers AI response");
@@ -832,9 +890,17 @@ export async function executeWorkersAi(
     const remainingMs = deadline - Date.now();
     if (remainingMs <= 0) return createFallbackAiTurnResult(job, "timeout");
     try {
-      const response = await requestWorkersAi(workersAi, profile, job, remainingMs, repairNote);
+      const response = await requestWorkersAi(
+        workersAi,
+        profile,
+        job,
+        effectiveAttemptTimeoutMs === undefined
+          ? remainingMs
+          : Math.min(effectiveAttemptTimeoutMs, remainingMs),
+        repairNote
+      );
       try {
-        return parseAiTurnResultForJob(response, job);
+        return parseAiTurnResultForJob(response, job, validationOptions);
       } catch (error) {
         lastError = error;
         repairNote = aiRepairInstruction(job, error);
@@ -857,8 +923,12 @@ export async function executeServerProfile(
   workersAi: Ai | undefined,
   profileId: string,
   job: AiTurnJob,
-  workersAiProfiles: readonly WorkersAiProfileDefinition[] = WORKERS_AI_PROFILES
+  workersAiProfiles: readonly WorkersAiProfileDefinition[] = WORKERS_AI_PROFILES,
+  timeoutMs?: number,
+  attemptTimeoutMs?: number,
+  validationOptions: { requireDrawingFinish?: boolean } = {}
 ): Promise<AiTurnResult> {
+  const effectiveTimeoutMs = timeoutMs ?? job.timeLimitSeconds * 1_000;
   const workersAiProfile = workersAiProfiles.find(({ id }) => id === profileId);
   if (workersAiProfile !== undefined) {
     if (workersAi === undefined) throw new Error("Workers AI binding is not configured");
@@ -866,8 +936,10 @@ export async function executeServerProfile(
       workersAi,
       workersAiProfile.id,
       job,
-      job.timeLimitSeconds * 1_000,
-      workersAiProfiles
+      effectiveTimeoutMs,
+      workersAiProfiles,
+      attemptTimeoutMs,
+      validationOptions
     );
   }
 
@@ -889,7 +961,9 @@ export async function executeServerProfile(
     profile: record.profile,
     secret: { secretRef: record.profile.secretRef ?? record.profile.id, apiKey: record.apiKey },
     job,
-    timeoutMs: job.timeLimitSeconds * 1_000,
+    timeoutMs: effectiveTimeoutMs,
+    ...(attemptTimeoutMs === undefined ? {} : { attemptTimeoutMs }),
+    ...(validationOptions.requireDrawingFinish === true ? { requireDrawingFinish: true } : {}),
     fetchImpl: serverFetch
   });
 }

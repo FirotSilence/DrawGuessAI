@@ -21,11 +21,15 @@ pnpm install
 pnpm dev
 ```
 
-Web 界面默认运行于 `http://localhost:5173`，Cloudflare Worker 默认运行于 `http://localhost:8787`。玩家可以在“模型档案”中配置 OpenAI Chat Completions 或 Anthropic Messages 兼容端点，并选择鉴权方式、任务能力和看图能力；端点仍须真正兼容所选协议并允许浏览器跨域访问。自备密钥默认只由当前浏览器使用。部署者也可以在被 Git 忽略的 `apps/worker/.prod.vars` 中配置允许列表内的服务端模型，`pnpm dev` 会自动加载它。模型能力由档案显式声明，首个能同时作画和猜图的服务端档案会成为默认选择，与厂商名称无关。公开试玩部署选择了 MiniMax 作为便捷选项，但项目本身不依赖 MiniMax；未配置真实 AI 时仍可使用明确标记为程序化的内置演示 AI。
+Web 界面默认运行于 `http://localhost:5173`，Cloudflare Worker 默认运行于 `http://localhost:8787`。玩家可以在“模型档案”中配置 OpenAI Chat Completions 或 Anthropic Messages 兼容端点，并选择鉴权方式、任务能力和看图能力；端点仍须真正兼容所选协议并允许浏览器跨域访问。自备密钥默认只由当前浏览器使用。部署者也可以在被 Git 忽略的 `apps/worker/.prod.vars` 中配置允许列表内的服务端模型，`pnpm dev` 会自动加载它。模型能力由档案显式声明，首个能同时作画和猜图的服务端档案会成为默认选择，与厂商名称无关。公开试玩部署选择了 MiniMax 作为便捷选项，但项目本身不依赖 MiniMax。未配置可用模型时，创建入口会要求先完成模型配置，不会静默使用模拟模型。
 
 ### 自定义题目
 
 创建房间后点击“开始接龙”，在弹窗中直接输入自定义题目，或选择“精选随机”和“AI 临时出题”。自定义题目可标注语言、类型（单词、词语、成语、谚语、诗句或歇后语）和可选题材。盲接龙中选择自定义题目后，房主会自动退出接龙时间线，作为不参赛的出题者和观察者；游戏中可用“解除剧透锁”查看谜面和每一阶段的猜词。
+
+### 当前范围
+
+0.2 版包含邀请房间、房间内再来一局、AI 剧场、盲接龙、确定性事件回放、带 WebSocket 回退的 WebRTC 预览、本地或允许列表内的服务端 AI、赛后圆桌互动，以及可分页浏览的公开最近对局存档。新存档沿用回放保留期；至少三个独立匿名投票者点赞后才进入有容量上限的长期保留池。固定房间 `MACH8888` 会在每个整点自动进行一局真实 AI 接龙并仅允许观察者加入；八个 AI 使用与普通房间相同的随机名称池，名称在房间生命周期内保持稳定。失败后会在同一小时内每两分钟重试，最多三次，然后等待下一整点。归档采用持久化 outbox 重试，不会因下一局启动而丢失。项目暂不提供账号、公开匹配、持久排行榜、文字或语音聊天，以及严格反作弊系统。
 
 ### 常用命令
 
@@ -51,7 +55,7 @@ pnpm install
 pnpm dev
 ```
 
-The web app runs at `http://localhost:5173` and the Cloudflare Worker at `http://localhost:8787`. Players can add an OpenAI Chat Completions-compatible or Anthropic Messages-compatible endpoint in **Model profiles**, including its authentication mode, supported tasks, and vision capability. The endpoint must actually implement the selected protocol and permit browser CORS; the key is browser-owned by default. Deployers can instead put allow-listed server profiles in the Git-ignored `apps/worker/.prod.vars`, which `pnpm dev` loads automatically. Capabilities are declared explicitly, and the first server profile that can both draw and guess becomes the default regardless of provider name. The public preview happens to offer MiniMax as a convenient deployment choice, but DrawGuessAI does not depend on it. The clearly labeled programmatic demo remains available without credentials.
+The web app runs at `http://localhost:5173` and the Cloudflare Worker at `http://localhost:8787`. Players can add an OpenAI Chat Completions-compatible or Anthropic Messages-compatible endpoint in **Model profiles**, including its authentication mode, supported tasks, and vision capability. The endpoint must actually implement the selected protocol and permit browser CORS; the key is browser-owned by default. Deployers can instead put allow-listed server profiles in the Git-ignored `apps/worker/.prod.vars`, which `pnpm dev` loads automatically. Capabilities are declared explicitly, and the first server profile that can both draw and guess becomes the default regardless of provider name. The public preview happens to offer MiniMax as a convenient deployment choice, but DrawGuessAI does not depend on it. When no usable model is configured, room creation asks for one instead of silently falling back to a simulated model.
 
 ### Custom prompts
 
@@ -61,4 +65,4 @@ See [`docs/architecture.md`](docs/architecture.md), [`docs/privacy.md`](docs/pri
 
 ### Current scope
 
-Version 0.1 includes invite rooms, AI theatre, blind relay, deterministic event replay, WebRTC previews with WebSocket fallback, local or allow-listed server AI profiles, post-game table reactions, and seven-day tokenized replays. It intentionally has no accounts, public matchmaking, persistent rankings, text/voice chat, permanent gallery, or strict anti-cheat system.
+Version 0.2 includes invite rooms, in-room rematches, AI theatre, blind relay, deterministic event replay, WebRTC previews with WebSocket fallback, local or allow-listed server AI profiles, post-game table reactions, and a paginated public recent-match archive. New records follow the replay retention period; three independent anonymous voters are required before a replay enters a bounded long-term pool. The spectator-only room `MACH8888` runs a real server-AI relay at each hour boundary. Its eight AI seats use the normal-room randomized name pool and keep those identities for the room lifetime. Failed runs retry every two minutes up to three attempts in that hour, then wait for the next boundary. A durable archive outbox preserves completed matches across retries and room restarts. It intentionally has no accounts, public matchmaking, persistent rankings, text/voice chat, or strict anti-cheat system.

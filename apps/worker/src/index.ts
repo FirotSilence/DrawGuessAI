@@ -4,17 +4,19 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 
+import { AUTOMATED_ROOM_CODE, AUTOMATED_ROOM_SCHEDULER, AutoRoomScheduler } from "./auto-room";
 import type { Env } from "./env";
 import { featuredReplayAssetPath } from "./featured-replays";
+import { MatchArchiveObject } from "./match-archive";
 import { RoomObject } from "./room";
 import {
   configuredServerProfilesWithDiagnostics,
   executeServerProfile,
   publicServerProfiles
 } from "./server-ai";
-import { randomRoomCode } from "./tokens";
+import { hashToken, randomRoomCode } from "./tokens";
 
-export { RoomObject };
+export { AutoRoomScheduler, MatchArchiveObject, RoomObject };
 
 const app = new Hono<{ Bindings: Env }>();
 const MAX_API_BODY_BYTES = 2 * 1024 * 1024;
@@ -28,6 +30,15 @@ export const RoomCodeSchema = z
 const ReplayTokenSchema = z
   .string()
   .regex(/^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{8}\.[A-Za-z0-9_-]{22}$/);
+
+const MatchLikeRequestSchema = z
+  .object({
+    viewerId: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9_-]{16,96}$/)
+  })
+  .strict();
 
 const ParticipantAuthSchema = z
   .object({
@@ -65,6 +76,40 @@ function rateLimitedResponse(): Response {
     { error: "rate-limited", message: "Too many requests; please try again shortly" },
     { status: 429, headers: { "cache-control": "no-store", "retry-after": "60" } }
   );
+}
+
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function archivedAutomatedRoundtableNeedsRepair(payload: unknown): boolean {
+  const replay = record(payload);
+  const state = record(replay?.state);
+  if (
+    replay?.roomId !== AUTOMATED_ROOM_CODE ||
+    state?.roomId !== AUTOMATED_ROOM_CODE ||
+    state.phase !== "complete" ||
+    !Array.isArray(state.timeline) ||
+    !Array.isArray(state.postGameReviews)
+  ) {
+    return false;
+  }
+  const reviewedSeatIds = new Set(
+    state.postGameReviews.flatMap((review) => {
+      const entry = record(review);
+      return typeof entry?.seatId === "string" ? [entry.seatId] : [];
+    })
+  );
+  return state.timeline.some((slot) => {
+    const entry = record(slot);
+    return (
+      entry?.actorType === "ai" &&
+      typeof entry.actorId === "string" &&
+      !reviewedSeatIds.has(entry.actorId)
+    );
+  });
 }
 
 app.use("*", async (context, next) => {
@@ -129,8 +174,33 @@ app.get("/api/config", (context) => {
     serverAiConfigIssues: configuration.issues,
     turnConfigured:
       context.env.TURN_KEY_ID !== undefined && context.env.TURN_KEY_API_TOKEN !== undefined,
-    replayDays: 7
+    replayDays: 7,
+    automatedRoomCode: AUTOMATED_ROOM_CODE
   });
+});
+
+async function automatedRoomStatus(context: {
+  env: Env;
+  req: { raw: Request };
+}): Promise<Response> {
+  if (
+    !(await rateLimitAllows(
+      context.env.AUTO_ROOM_STATUS_RATE_LIMITER,
+      requestNetworkKey(context.req.raw)
+    ))
+  ) {
+    return rateLimitedResponse();
+  }
+  const response = await context.env.AUTO_ROOM.getByName(AUTOMATED_ROOM_SCHEDULER).fetch(
+    "https://auto.internal/status"
+  );
+  return response;
+}
+
+app.get("/api/automated-room", (context) => automatedRoomStatus(context));
+
+app.get("/api/automated-room/status", (context) => {
+  return automatedRoomStatus(context);
 });
 
 app.post("/api/rooms", async (context) => {
@@ -288,10 +358,43 @@ app.post("/api/server-ai/:profileId", async (context) => {
   return context.json(result);
 });
 
+app.get("/api/matches", async (context) => {
+  const requestUrl = new URL(context.req.url);
+  return context.env.MATCHES.getByName("global").fetch(
+    `https://matches.internal/list${requestUrl.search}`
+  );
+});
+
+app.post("/api/matches/:token/like", async (context) => {
+  const parsedToken = ReplayTokenSchema.safeParse(context.req.param("token"));
+  if (!parsedToken.success) return context.json({ error: "not-found" }, 404);
+  if (
+    !(await rateLimitAllows(
+      context.env.MATCH_LIKE_RATE_LIMITER,
+      requestNetworkKey(context.req.raw)
+    ))
+  ) {
+    return rateLimitedResponse();
+  }
+  const request = MatchLikeRequestSchema.parse(await context.req.json());
+  const voterNetworkKey = await hashToken(
+    `${configuredOrigin(context.env.APP_ORIGIN, context.req.url)}:${requestNetworkKey(context.req.raw)}`
+  );
+  return context.env.MATCHES.getByName("global").fetch(
+    `https://matches.internal/like/${encodeURIComponent(parsedToken.data)}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...request, voterNetworkKey })
+    }
+  );
+});
+
 app.get("/api/replays/:token", async (context) => {
   const parsedToken = ReplayTokenSchema.safeParse(context.req.param("token"));
   if (!parsedToken.success) return context.json({ error: "not-found" }, 404);
   const token = parsedToken.data;
+  const requestUrl = new URL(context.req.url);
   const featuredAssetPath = featuredReplayAssetPath(token);
   if (featuredAssetPath !== undefined) {
     const assetUrl = new URL(featuredAssetPath, context.req.url);
@@ -307,6 +410,36 @@ app.get("/api/replays/:token", async (context) => {
         headers: { "content-type": "application/json; charset=utf-8" }
       });
     }
+  }
+  const archived = await context.env.MATCHES.getByName("global").fetch(
+    `https://matches.internal/replay/${encodeURIComponent(token)}${requestUrl.search}`
+  );
+  if (archived.status !== 404) {
+    if (archived.ok && token.startsWith(`${AUTOMATED_ROOM_CODE}.`)) {
+      try {
+        const payload = await archived.clone().json();
+        if (archivedAutomatedRoundtableNeedsRepair(payload)) {
+          const repair = await context.env.ROOMS.getByName(AUTOMATED_ROOM_CODE).fetch(
+            "https://room.internal/automated/repair-roundtable",
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ token })
+            }
+          );
+          const repairPayload = repair.ok ? record(await repair.json()) : undefined;
+          if (repairPayload?.pending === true) {
+            return context.json({
+              ...(payload as Record<string, unknown>),
+              roundtablePending: true
+            });
+          }
+        }
+      } catch {
+        // A replay stays readable even when its optional roundtable repair cannot start.
+      }
+    }
+    return archived;
   }
   const roomId = token.slice(0, 8);
   return context.env.ROOMS.getByName(roomId).fetch(
@@ -331,4 +464,13 @@ app.delete("/api/replays/:token", async (context) => {
 
 app.all("*", (context) => context.env.ASSETS.fetch(context.req.raw));
 
-export default app;
+export default {
+  fetch: app.fetch,
+  scheduled(_controller: ScheduledController, env: Env, execution: ExecutionContext) {
+    execution.waitUntil(
+      env.AUTO_ROOM.getByName(AUTOMATED_ROOM_SCHEDULER).fetch("https://auto.internal/tick", {
+        method: "POST"
+      })
+    );
+  }
+};

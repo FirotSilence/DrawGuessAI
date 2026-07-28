@@ -23,6 +23,7 @@ export class RoomClient {
   private directPeers = 0;
   private iceServers: RTCIceServer[] = [];
   private peerIds: string[] = [];
+  private peerMeshEnabled = true;
   private previewRecipients: ReadonlySet<string> | undefined;
   private previewGeneration = 0;
 
@@ -54,7 +55,7 @@ export class RoomClient {
     this.socket = socket;
     socket.onopen = () => {
       this.handlers.onConnection(this.directPeers > 0 ? "direct" : "fallback");
-      this.createMesh();
+      if (this.peerMeshEnabled) this.createMesh();
     };
     socket.onmessage = (event) => {
       try {
@@ -83,7 +84,8 @@ export class RoomClient {
         } else {
           if (message.type === "room.snapshot") {
             this.peerIds = message.peers.map((peer) => peer.id);
-            this.mesh?.syncPeers(this.peerIds.map((id) => ({ id })));
+            this.setPeerMeshEnabled(message.automated !== true);
+            if (this.peerMeshEnabled) this.mesh?.syncPeers(this.peerIds.map((id) => ({ id })));
           }
           this.handlers.onMessage(message);
         }
@@ -120,6 +122,19 @@ export class RoomClient {
   setIcePolicy(policy: RTCIceTransportPolicy): void {
     if (policy === this.icePolicy) return;
     this.icePolicy = policy;
+    if (this.peerMeshEnabled && this.socket?.readyState === WebSocket.OPEN) this.createMesh();
+  }
+
+  private setPeerMeshEnabled(enabled: boolean): void {
+    if (this.peerMeshEnabled === enabled) return;
+    this.peerMeshEnabled = enabled;
+    if (!enabled) {
+      this.mesh?.close();
+      this.mesh = undefined;
+      this.directPeers = 0;
+      if (this.socket?.readyState === WebSocket.OPEN) this.handlers.onConnection("fallback");
+      return;
+    }
     if (this.socket?.readyState === WebSocket.OPEN) this.createMesh();
   }
 
