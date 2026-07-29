@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1
+
+- Make roundtable reaction polarity immediately recognizable with stronger icon and color cues.
+- Keep reaction labels compact without extra polarity wording and restore centered icon/text alignment.
+
 ## 0.2.0
 
 - Make the fixed automated room spectator-only and remove legacy members that could consume its capacity.

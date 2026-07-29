@@ -235,6 +235,33 @@ test("the documented featured replay is bundled and remains playable", async ({
   await expect(page.getByRole("heading", { name: "骑驴看唱本，走着瞧" })).toBeVisible();
   await expect(page.locator(".reveal-step")).toHaveCount(8);
   await expect(page.locator(".replay-footer")).toContainText(/Featured public replay|精选公开回放/);
+  const firstReaction = page.locator(".reaction-sentiment").first();
+  await expect(firstReaction).toBeVisible();
+  expect((await page.locator(".reaction-sentiment").allTextContents()).join(" ")).not.toMatch(
+    /\b(?:Positive|Negative)\b|正向|负向/
+  );
+  const reactionAlignment = await firstReaction.evaluate((element) => {
+    const iconSlot = element.querySelector(".reaction-sentiment-icon")!;
+    const icon = iconSlot.querySelector("svg")!;
+    const copy = element.querySelector(".reaction-sentiment-copy")!;
+    const label = copy.querySelector(".reaction-sentiment-kind")!;
+    const centeredDelta = (outer: Element, inner: Element) => {
+      const outerBox = outer.getBoundingClientRect();
+      const innerBox = inner.getBoundingClientRect();
+      return {
+        x: Math.abs(innerBox.left + innerBox.width / 2 - (outerBox.left + outerBox.width / 2)),
+        y: Math.abs(innerBox.top + innerBox.height / 2 - (outerBox.top + outerBox.height / 2))
+      };
+    };
+    return {
+      icon: centeredDelta(iconSlot, icon),
+      label: centeredDelta(copy, label)
+    };
+  });
+  expect(reactionAlignment.icon.x).toBeLessThanOrEqual(0.75);
+  expect(reactionAlignment.icon.y).toBeLessThanOrEqual(0.75);
+  expect(reactionAlignment.label.x).toBeLessThanOrEqual(0.75);
+  expect(reactionAlignment.label.y).toBeLessThanOrEqual(0.75);
   await expect
     .poll(() => paintedPixelsIn(page.locator(".reveal-step canvas").first()))
     .toBeGreaterThan(100);

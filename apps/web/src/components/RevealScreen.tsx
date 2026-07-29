@@ -27,7 +27,7 @@ import { reactionTone } from "../lib/reaction-tone";
 import { CanvasBoard } from "./CanvasBoard";
 import { PersonaAvatar } from "./PersonaAvatar";
 import { PromptTags } from "./PromptTags";
-import { ReactionIcon } from "./ReactionBar";
+import { ReactionSentiment } from "./ReactionBar";
 import { SettlementModal } from "./SettlementModal";
 import { SourceLink } from "./SourceLink";
 import { TurnContributionPreview } from "./TurnContributionPreview";
@@ -64,6 +64,7 @@ function RoundtablePost({
     ? undefined
     : getPersona(review?.personaId ?? slot.personaId ?? "maestro");
   const departed = review?.status === "departed";
+  const reviewTone = review === undefined || departed ? undefined : reactionTone(review.reaction);
   const contribution = contributionForActor(state, slot.actorId);
   const receivedReactions = receivedPostGameReactions(reviews, slot.actorId);
   const replyTo = reviews.find((candidate) => candidate.seatId === review?.replyToSeatId);
@@ -71,7 +72,7 @@ function RoundtablePost({
 
   return (
     <article
-      className={`persona-review${isHuman ? " roundtable-human" : ""}${departed ? " is-departed" : ""}`}
+      className={`persona-review${isHuman ? " roundtable-human" : ""}${departed ? " is-departed" : ""}${reviewTone === undefined ? "" : ` has-reaction reaction-tone-${reviewTone}`}`}
     >
       <div
         className="review-avatar-anchor"
@@ -115,14 +116,7 @@ function RoundtablePost({
                   <LogOut size={15} />
                 </span>
               ) : review !== undefined ? (
-                <span
-                  className={`review-reaction reaction-tone-${reactionTone(review.reaction)}`}
-                  title={t(
-                    `reaction${review.reaction[0]!.toUpperCase()}${review.reaction.slice(1)}`
-                  )}
-                >
-                  <ReactionIcon reaction={review.reaction} size={16} />
-                </span>
+                <ReactionSentiment reaction={review.reaction} />
               ) : null}
             </header>
             {replyTo !== undefined && !departed && (
@@ -150,13 +144,7 @@ function RoundtablePost({
                 className={`review-action reaction-tone-${reactionTone(action.reaction)}`}
                 key={`${slot.actorId}:${action.fromSeatId}:${action.reaction}:${index}`}
               >
-                <span
-                  title={t(
-                    `reaction${action.reaction[0]!.toUpperCase()}${action.reaction.slice(1)}`
-                  )}
-                >
-                  <ReactionIcon reaction={action.reaction} size={16} />
-                </span>
+                <ReactionSentiment reaction={action.reaction} size={16} />
                 <span>
                   <strong>{t("receivedReactionFrom", { name: action.fromDisplayName })}</strong>
                   <small>{action.text}</small>
