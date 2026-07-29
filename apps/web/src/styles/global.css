@@ -17,9 +17,9 @@
   --mustard: #e4b63d;
   --cobalt: #315fd4;
   --danger: #b43f38;
-  --reaction-positive: #d94f43;
-  --reaction-negative: #16845d;
-  --reaction-neutral: #8a6900;
+  --reaction-positive: #13765b;
+  --reaction-negative: #bd3f38;
+  --reaction-neutral: #806000;
   --reaction-tone: var(--reaction-neutral);
   --shadow: 0 12px 32px rgb(32 32 30 / 10%);
 }
@@ -1609,15 +1609,31 @@ label > span,
   width: 36px;
   height: 36px;
   place-items: center;
-  border: 1px solid color-mix(in srgb, var(--reaction-tone) 42%, var(--line));
+  border: 2px solid color-mix(in srgb, var(--reaction-tone) 58%, var(--line));
   border-radius: 50%;
   color: var(--reaction-tone);
-  background: color-mix(in srgb, var(--reaction-tone) 7%, white);
+  background: color-mix(in srgb, var(--reaction-tone) 12%, white);
   cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    transform 120ms ease;
 }
 .reaction-button:hover {
   border-color: var(--reaction-tone);
-  background: color-mix(in srgb, var(--reaction-tone) 14%, white);
+  background: color-mix(in srgb, var(--reaction-tone) 20%, white);
+  transform: translateY(-1px);
+}
+.reaction-button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--reaction-tone) 35%, transparent);
+  outline-offset: 2px;
+}
+.reaction-icon {
+  display: block;
+  flex: 0 0 auto;
+}
+.reaction-icon-heart {
+  fill: currentColor;
 }
 .reaction-tone-positive {
   --reaction-tone: var(--reaction-positive);
@@ -2424,7 +2440,14 @@ label > span,
 .review-copy > header {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
+}
+.persona-review.has-reaction .review-copy {
+  padding: 8px 10px 9px;
+  border-left: 4px solid var(--reaction-tone);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--reaction-tone) 9%, white);
 }
 .review-persona-tag {
   padding: 2px 5px;
@@ -2448,13 +2471,38 @@ label > span,
   display: inline-flex;
   color: var(--muted);
 }
-.review-reaction {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
+.reaction-sentiment {
+  display: inline-grid;
+  height: 28px;
+  grid-template-columns: 28px auto;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--reaction-tone) 58%, var(--line));
+  border-radius: 4px;
   color: var(--reaction-tone);
+  background: white;
+  line-height: 1;
+  vertical-align: middle;
+}
+.reaction-sentiment-icon {
+  display: grid;
+  height: 100%;
+  place-items: center;
+  color: white;
+  background: var(--reaction-tone);
+}
+.reaction-sentiment-copy {
+  display: grid;
+  height: 100%;
+  padding: 0 8px;
+  place-items: center;
+  white-space: nowrap;
+}
+.reaction-sentiment-kind {
+  color: color-mix(in srgb, var(--reaction-tone) 72%, var(--ink));
   font-size: 10px;
   font-weight: 800;
+  line-height: 1;
 }
 .review-reply,
 .review-model {
@@ -2621,25 +2669,19 @@ label > span,
 }
 .review-action {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 7px;
-  padding: 6px 8px;
-  border-left: 3px solid var(--reaction-tone);
+  gap: 9px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--reaction-tone) 34%, var(--line));
+  border-left: 4px solid var(--reaction-tone);
   border-radius: 4px;
-  background: color-mix(in srgb, var(--reaction-tone) 6%, #f3f4f1);
-}
-.review-action > span:first-child {
-  display: grid;
-  color: var(--reaction-tone);
-  place-items: center;
+  background: color-mix(in srgb, var(--reaction-tone) 10%, #f3f4f1);
 }
 .review-action > span:last-child {
-  display: flex;
+  display: grid;
   min-width: 0;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 6px;
+  gap: 2px;
 }
 .review-action strong {
   font-size: 10px;
@@ -2647,6 +2689,8 @@ label > span,
 .review-action small {
   color: var(--ink);
   overflow-wrap: anywhere;
+  font-size: 11px;
+  line-height: 1.35;
 }
 .review-loading {
   display: flex;
