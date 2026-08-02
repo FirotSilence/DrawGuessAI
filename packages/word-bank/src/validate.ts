@@ -1,6 +1,7 @@
 import { PROMPT_TOPICS, type PromptTopic } from "@drawguessai/game-core";
 
 import { WORD_BANK } from "./bank";
+import { validateAllAgesText, validatePlayablePromptText } from "./safety";
 import { PromptEntrySchema, type PromptCategory, type PromptDifficulty } from "./schema";
 
 export interface BankReport {
@@ -25,6 +26,7 @@ const CATEGORIES: readonly PromptCategory[] = [
   "food-scenes",
   "transport-travel",
   "festivals-culture",
+  "places",
   "idioms",
   "proverbs",
   "poem-lines",
@@ -45,10 +47,20 @@ export function validateWordBank(): BankReport {
   const texts = new Set<string>();
   const duplicateIds: string[] = [];
   const duplicateTexts: string[] = [];
-  const invalidEntries: string[] = [];
+  const invalidEntries = new Set<string>();
 
   for (const entry of WORD_BANK) {
-    if (!PromptEntrySchema.safeParse(entry).success) invalidEntries.push(entry.id);
+    const englishIsValid =
+      entry.kind === "poem-line"
+        ? validateAllAgesText(entry.texts.en).ok
+        : validatePlayablePromptText(entry.texts.en, entry.kind, "en").ok;
+    if (
+      !PromptEntrySchema.safeParse(entry).success ||
+      !validatePlayablePromptText(entry.texts["zh-CN"], entry.kind, "zh-CN").ok ||
+      !englishIsValid
+    ) {
+      invalidEntries.add(entry.id);
+    }
     if (ids.has(entry.id)) duplicateIds.push(entry.id);
     ids.add(entry.id);
     for (const text of [entry.texts["zh-CN"], entry.texts.en.toLowerCase()]) {
@@ -66,13 +78,13 @@ export function validateWordBank(): BankReport {
       Object.values(categories).every((count) => count > 0) &&
       duplicateIds.length === 0 &&
       duplicateTexts.length === 0 &&
-      invalidEntries.length === 0,
+      invalidEntries.size === 0,
     total: WORD_BANK.length,
     categories,
     difficulties,
     topics,
     duplicateIds,
     duplicateTexts,
-    invalidEntries
+    invalidEntries: [...invalidEntries]
   };
 }

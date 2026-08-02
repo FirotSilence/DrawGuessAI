@@ -2,12 +2,16 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 
 import {
+  BRUSH_PRESETS,
+  BrushPresetSchema,
   hashCanvasCommands,
   hasVisibleCanvasContent,
   MASTER_PALETTE,
   activeCanvasMarkCommands,
+  brushLayersForStroke,
   normalizeCanvasCommandOffsets,
   simplifyStroke,
+  strokeWidthProfileForRender,
   toCanvasCommandOffsetMs,
   validateCanvasCommands,
   type CanvasBudget,
@@ -71,6 +75,43 @@ describe("canvas protocol", () => {
     expect(result.ok).toBe(true);
     expect(hashCanvasCommands(commands)).toHaveLength(8);
     expect(hashCanvasCommands(commands)).toBe(hashCanvasCommands(structuredClone(commands)));
+  });
+
+  it("keeps brush presets bounded, deterministic, and backward compatible", () => {
+    const base = {
+      type: "stroke" as const,
+      id: "brush-sample",
+      tool: "pen" as const,
+      color: MASTER_PALETTE[0],
+      width: 16 as const,
+      points: [
+        { x: 100, y: 120 },
+        { x: 300, y: 180 },
+        { x: 520, y: 140 }
+      ],
+      offsetMs: 0
+    };
+
+    expect(BRUSH_PRESETS.map((preset) => BrushPresetSchema.parse(preset))).toEqual(BRUSH_PRESETS);
+    expect(brushLayersForStroke(base)).toHaveLength(1);
+    for (const brushPreset of BRUSH_PRESETS) {
+      const stroke = { ...base, brushPreset };
+      expect(brushLayersForStroke(stroke)).toEqual(brushLayersForStroke(stroke));
+      expect(
+        validateCanvasCommands(
+          [stroke, { type: "finish", id: `finish-${brushPreset}`, offsetMs: 1 }],
+          budget,
+          { requireFinish: true }
+        ).ok
+      ).toBe(true);
+    }
+    expect(brushLayersForStroke({ ...base, brushPreset: "pencil" })).toHaveLength(3);
+    expect(brushLayersForStroke({ ...base, brushPreset: "paint" })).toHaveLength(4);
+    expect(strokeWidthProfileForRender({ ...base, brushPreset: "marker" })).toMatchObject({
+      startScale: 1,
+      peakScale: 1,
+      endScale: 1
+    });
   });
 
   it("accepts filled closed strokes while enforcing the room palette", () => {

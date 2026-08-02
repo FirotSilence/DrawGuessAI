@@ -1,4 +1,25 @@
-import type { CanvasCommand, StrokeCommand } from "@drawguessai/canvas-protocol";
+import {
+  activeCanvasMarkCommands,
+  brushPresetForStroke,
+  type BrushPreset,
+  type CanvasCommand,
+  type Point,
+  type StrokeCommand
+} from "@drawguessai/canvas-protocol";
+
+export interface CanvasPlaybackCursor {
+  angleDeg: number;
+  brushPreset: BrushPreset;
+  color: string;
+  point: Point;
+  tool: StrokeCommand["tool"];
+  width: StrokeCommand["width"];
+}
+
+export interface CanvasPlaybackFrame {
+  commands: CanvasCommand[];
+  cursor?: CanvasPlaybackCursor;
+}
 
 export function playbackProgressForRender(
   activeIdentity: string | undefined,
@@ -44,12 +65,43 @@ export function strokeAtPlaybackProgress(
   return partial;
 }
 
-export function commandsAtPlaybackProgress(
+function playbackCursorForStroke(
+  command: StrokeCommand,
+  partial: StrokeCommand
+): CanvasPlaybackCursor | undefined {
+  const point = partial.points.at(-1);
+  if (point === undefined) return undefined;
+  let previous = partial.points.at(-2) ?? point;
+  for (let index = partial.points.length - 2; index >= 0; index -= 1) {
+    const candidate = partial.points[index]!;
+    if (candidate.x !== point.x || candidate.y !== point.y) {
+      previous = candidate;
+      break;
+    }
+  }
+  return {
+    angleDeg: (Math.atan2(point.y - previous.y, point.x - previous.x) * 180) / Math.PI,
+    brushPreset: brushPresetForStroke(command),
+    color: command.color,
+    point,
+    tool: command.tool,
+    width: command.width
+  };
+}
+
+export function liveCanvasPlaybackCursor(
+  commands: readonly CanvasCommand[]
+): CanvasPlaybackCursor | undefined {
+  const latest = activeCanvasMarkCommands(commands).at(-1);
+  return latest?.type === "stroke" ? playbackCursorForStroke(latest, latest) : undefined;
+}
+
+export function canvasPlaybackFrameAtProgress(
   commands: readonly CanvasCommand[],
   progress: number
-): CanvasCommand[] {
-  if (progress >= 1) return [...commands];
-  if (progress <= 0) return [];
+): CanvasPlaybackFrame {
+  if (progress >= 1) return { commands: [...commands] };
+  if (progress <= 0) return { commands: [] };
   const drawable = commands.filter((command) => command.type !== "finish");
   const weights = drawable.map((command, index) =>
     commandPlaybackWeight(command, drawable.length - index)
@@ -68,9 +120,20 @@ export function commandsAtPlaybackProgress(
     if (command.type === "stroke" && target > consumed) {
       const fraction = (target - consumed) / weight;
       const partial = strokeAtPlaybackProgress(command, fraction);
-      if (partial !== undefined) visible.push(partial);
+      if (partial !== undefined) {
+        visible.push(partial);
+        const cursor = playbackCursorForStroke(command, partial);
+        return cursor === undefined ? { commands: visible } : { commands: visible, cursor };
+      }
     }
     break;
   }
-  return visible;
+  return { commands: visible };
+}
+
+export function commandsAtPlaybackProgress(
+  commands: readonly CanvasCommand[],
+  progress: number
+): CanvasCommand[] {
+  return canvasPlaybackFrameAtProgress(commands, progress).commands;
 }

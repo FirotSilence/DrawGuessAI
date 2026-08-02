@@ -174,6 +174,8 @@ export const PostGameActionSchema = z
   })
   .strict();
 
+export const POST_GAME_REVIEW_RECOMMENDED_TEXT_LIMIT = 50;
+export const POST_GAME_REVIEW_GENERATED_TEXT_LIMIT = 100;
 export const POST_GAME_REVIEW_TEXT_LIMIT = 1_000;
 
 export const PostGameReviewSchema = z

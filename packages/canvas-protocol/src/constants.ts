@@ -7,6 +7,8 @@ export const MAX_FILLS_PER_TURN = 12;
 
 export const BRUSH_WIDTHS = [4, 8, 16, 28] as const;
 
+export const BRUSH_PRESETS = ["ink", "pencil", "marker", "paint"] as const;
+
 export const PAPER_COLOR = "#f7f8fa";
 
 export const MASTER_PALETTE = [

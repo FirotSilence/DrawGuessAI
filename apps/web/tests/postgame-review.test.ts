@@ -2,7 +2,8 @@ import {
   DEFAULT_GAME_CONFIG,
   createInitialGameState,
   type GameArtifact,
-  type GameState
+  type GameState,
+  type PostGameReview
 } from "@drawguessai/game-core";
 import { describe, expect, it } from "vitest";
 
@@ -101,6 +102,40 @@ describe("post-game player banter", () => {
     expect(context).toContain("type=idiom; length=4");
     expect(context).not.toContain("personaId=");
     expect(context).not.toContain("FULL RELAY");
+  });
+
+  it("passes recent speech and lines aimed at the reviewer as live conversation", () => {
+    const reviews: PostGameReview[] = [
+      {
+        id: "review-1",
+        seatId: "ai-maestro",
+        personaId: "maestro",
+        displayName: "大师",
+        modelLabel: "Model",
+        text: "我那条蛇明明还挺有说服力。",
+        score: 3,
+        reaction: "laugh",
+        status: "generated",
+        actions: [
+          {
+            targetSeatId: "ai-deadpan",
+            targetDisplayName: "冷面",
+            targetTurnIndex: 1,
+            reaction: "egg",
+            text: "你怎么一眼看成鱼了？"
+          }
+        ],
+        at: 1
+      }
+    ];
+
+    const context = buildPostGameReviewContext(completedState(), "ai-deadpan", reviews);
+    expect(context).toContain("CONVERSATION POSITION: speaker 2 after 1 earlier speaker");
+    expect(context).toContain('LATEST SPEAKER: actorId=ai-maestro name="大师"');
+    expect(context).toContain("EARLIER TABLE TALK (oldest to newest):");
+    expect(context).toContain('said="我那条蛇明明还挺有说服力。"');
+    expect(context).toContain("DIRECTED AT YOU (these are open conversational hooks):");
+    expect(context).toContain('from actorId=ai-maestro name="大师" at T2: "你怎么一眼看成鱼了？"');
   });
 
   it("keeps every actor and handoff in a maximum-length relay", () => {

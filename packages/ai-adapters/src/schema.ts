@@ -1,7 +1,7 @@
 import { CanvasCommandSchema } from "@drawguessai/canvas-protocol";
 import {
   GameLocaleSchema,
-  POST_GAME_REVIEW_TEXT_LIMIT,
+  POST_GAME_REVIEW_GENERATED_TEXT_LIMIT,
   PromptKindSchema,
   PromptMetadataSchema,
   PromptTopicSchema,
@@ -223,7 +223,7 @@ export const AiSocialActionSchema = z
 
 export const AiReviewSchema = z
   .object({
-    text: z.string().min(1).max(POST_GAME_REVIEW_TEXT_LIMIT),
+    text: z.string().min(1).max(POST_GAME_REVIEW_GENERATED_TEXT_LIMIT),
     score: z.number().int().min(1).max(5),
     replyToActorId: z.string().min(1).max(80).optional(),
     actions: z.array(AiSocialActionSchema).max(3).optional()

@@ -267,6 +267,28 @@ test("the documented featured replay is bundled and remains playable", async ({
     .toBeGreaterThan(100);
 });
 
+test("the reveal header remains accessible after scrolling", async ({ page }, testInfo) => {
+  test.skip(!["desktop-chromium", "mobile-chromium"].includes(testInfo.project.name));
+  await page.goto("/?replay=5FPPFTC3.ySGKoHUPi39iesa0pr2uKA");
+  const header = page.locator(".reveal-header");
+  await expect(header).toBeVisible();
+  await expect(page.locator(".replay-footer")).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  const headerBox = await header.boundingBox();
+  expect(headerBox).not.toBeNull();
+  expect(headerBox!.y).toBeGreaterThanOrEqual(0);
+  expect(headerBox!.y).toBeLessThanOrEqual(1);
+  await expect(header.getByRole("button", { name: /Back|返回/ })).toBeVisible();
+  if (testInfo.project.name === "mobile-chromium") {
+    expect(headerBox!.height).toBeLessThanOrEqual(64);
+  }
+  await page.screenshot({
+    path: `work/qa/reveal-sticky-${testInfo.project.name}.png`,
+    fullPage: false
+  });
+});
+
 test("the first visit follows the browser language and remembers a manual choice", async ({
   browser
 }, testInfo) => {
@@ -406,6 +428,21 @@ test("lobby decouples AI names from personas and confirms abandoning the room", 
   await expect(
     promptDialog.getByRole("button", { name: /AI-generated prompt|AI 临时出题/ })
   ).toBeVisible();
+  const promptType = promptDialog.getByLabel(/Prompt type|题目类型/);
+  await expect(promptType.locator('option[value="poem-line"]')).toHaveCount(0);
+  await promptDialog.getByLabel(/Prompt language|题目语言/).selectOption("zh-CN");
+  await expect(promptType.locator('option[value="poem-line"]')).toHaveCount(1);
+  const customPrompt = promptDialog.getByLabel(/Custom prompt|自定义题目/);
+  const submitPrompt = promptDialog.getByRole("button", { name: /Confirm prompt|确认题目/ });
+  await promptType.selectOption("poem-line");
+  await customPrompt.fill("床前明月光");
+  await expect(submitPrompt).toBeEnabled();
+  await promptType.selectOption("phrase");
+  await customPrompt.fill("雨伞被风吹走");
+  await expect(submitPrompt).toBeDisabled();
+  await promptType.selectOption("xiehouyu");
+  await customPrompt.fill("狗拿耗子，多管闲事");
+  await expect(submitPrompt).toBeEnabled();
   await page.screenshot({ path: "work/qa/prompt-choice-1440x900.png", fullPage: true });
   await promptDialog.getByRole("button", { name: /Close|关闭/ }).click();
 
@@ -935,7 +972,7 @@ test("AI seats expose twelve configurable persona labels", async ({ page }, test
   await page.screenshot({ path: "work/qa/personas-lobby-1440x900.png", fullPage: true });
 });
 
-test("host can edit a persona name and its turn and roundtable prompts", async ({
+test("host can edit a persona name, drawing voice, and roundtable prompt", async ({
   page
 }, testInfo) => {
   await page.addInitScript(() => {
@@ -977,7 +1014,7 @@ test("host can edit a persona name and its turn and roundtable prompts", async (
   await dialog.getByLabel(/Persona name|人设名称/).fill("街头派");
   await dialog.getByLabel(/Persona description|人设简介/).fill("直爽，认真，胜负心强");
   await dialog
-    .getByLabel(/Turn prompt|回合提示词/)
+    .getByLabel(/Drawing style & turn voice|画风与回合发言/)
     .fill("Use lively curved marks, keep the answer recognizable, and speak plainly.");
   await dialog
     .getByLabel(/Roundtable prompt|圆桌提示词/)
@@ -1266,6 +1303,7 @@ test("AI theatre completes and exports a versioned replay", async ({ page }, tes
   await expect(page.locator(".reaction-button.reaction-tone-neutral")).toHaveCount(1);
   const playbackStatus = page.locator(".canvas-playback-status");
   await expect(playbackStatus).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".ai-playback-cursor")).toBeVisible({ timeout: 4_000 });
   const initialPaintedPixels = await paintedPixels(page);
   await expect
     .poll(() => paintedPixels(page), { timeout: 4_000 })
@@ -1462,7 +1500,7 @@ test("custom prompts keep language and type tags behind an observer spoiler lock
   const promptDialog = page.getByRole("dialog", {
     name: /Choose this game's prompt|选择本局题目/
   });
-  await promptDialog.getByPlaceholder(/common word|常用词/).fill("守株待兔");
+  await promptDialog.getByLabel(/Custom prompt|自定义题目/).fill("守株待兔");
   await promptDialog.getByLabel(/Prompt language|题目语言/).selectOption("zh-CN");
   await promptDialog.getByLabel(/Prompt type|题目类型/).selectOption("idiom");
   await promptDialog.getByLabel(/Subject category|题材类型/).selectOption("history");
@@ -1582,6 +1620,9 @@ test("mobile drawing keeps a stable 4:3 canvas and usable toolbar", async ({ pag
   await startRelay(page);
   const canvas = page.locator("canvas.is-editable");
   await expect(canvas).toBeVisible({ timeout: 8_000 });
+  const brushStyle = page.getByLabel(/Brush style|笔刷风格/);
+  await brushStyle.selectOption("paint");
+  await expect(brushStyle).toHaveValue("paint");
   const box = await canvas.boundingBox();
   expect(box).not.toBeNull();
   expect(Math.abs(box!.width / box!.height - 4 / 3)).toBeLessThan(0.02);
@@ -1604,6 +1645,24 @@ test("mobile drawing keeps a stable 4:3 canvas and usable toolbar", async ({ pag
   expect(toolbarBox!.x).toBeGreaterThanOrEqual(0);
   expect(toolbarBox!.x + toolbarBox!.width).toBeLessThanOrEqual(391);
   await page.screenshot({ path: "work/qa/drawing-390x844.png" });
+});
+
+test("compact desktop drawing toolbar stays within its canvas", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop-chromium");
+  await page.setViewportSize({ width: 800, height: 900 });
+  await createRoom(page, "Compact Artist", "blind");
+  await randomizeActorIntoFirstSlot(page, "Compact Artist");
+  await startRelay(page);
+  await expect(page.locator("canvas.is-editable")).toBeVisible({ timeout: 8_000 });
+  const brushStyle = page.getByLabel(/Brush style|笔刷风格/);
+  await brushStyle.selectOption("marker");
+  await expect(brushStyle).toHaveValue("marker");
+  const toolbar = page.locator(".canvas-toolbar");
+  await expect(toolbar).toBeVisible();
+  expect(await toolbar.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+    true
+  );
+  await page.screenshot({ path: "work/qa/drawing-800x900.png" });
 });
 
 test("blind relay hides content, negotiates preview transport, and accepts both humans", async ({

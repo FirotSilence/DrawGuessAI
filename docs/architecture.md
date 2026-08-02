@@ -26,7 +26,7 @@ flowchart LR
 | `packages/canvas-protocol`  | Quantized commands, limits, validation, rendering semantics                  |
 | `packages/network-protocol` | Versioned envelopes, messages, visibility and idempotency                    |
 | `packages/ai-adapters`      | OpenAI/Anthropic-compatible fetch adapters and twelve personas               |
-| `packages/word-bank`        | 520 bilingual, all-ages concepts across 14 categories and selection rules    |
+| `packages/word-bank`        | 555 curated records across 15 categories with locale-aware selection rules   |
 
 ## Authority and previews
 
@@ -38,7 +38,9 @@ Blind-relay preview recipients are explicitly filtered. A player who has not act
 
 Room schedules and prompt selection use saved seeds. Domain transitions are append-only `GameEvent` records in SQLite and reduce through `applyGameEvent`. Event IDs make repeated delivery idempotent, while monotonic sequence numbers provide ordering and audit context. The ordered WebSocket and visibility-filtered snapshots reconcile connection and transition boundaries. Replay JSON includes protocol version `1`, the materialized state, and the ordered event list.
 
-Every AI timeline position has its own actor ID, persona, name, and avatar. The same underlying model profile or base persona may execute several actors, but schedules never reuse one AI actor within a relay. Hosts can layer a custom display name, description, turn prompt, and roundtable prompt over any base persona while keeping its avatar, so a chain of up to twelve turns remains visibly composed of distinct players.
+Every curated prompt declares its semantic kind. New prompts are limited to dictionary-style words, compact noun or activity phrases, idioms, proverbs, and Chinese xiehouyu. Chinese games additionally allow 35 familiar complete classical poem lines; English selection excludes that category and the custom prompt UI hides it. Improvised subject-predicate descriptions remain invalid. The shared locale-aware validator applies the same rule to custom and AI-generated prompts before the Durable Object accepts them.
+
+Every AI timeline position has its own actor ID, persona, name, and avatar. The same underlying model profile or base persona may execute several actors, but schedules never reuse one AI actor within a relay. Each built-in persona carries an explicit drawing character plus separate live-reaction and roundtable voices, so identity affects composition, geometry, brushes, palette, conversational focus, and cadence without weakening recognizability. Hosts can layer a custom display name, description, drawing/turn prompt, and roundtable prompt over any base persona while keeping its avatar, so a chain of up to twelve turns remains visibly composed of distinct players.
 
 ## Room lifecycle
 

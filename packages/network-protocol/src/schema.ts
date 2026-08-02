@@ -11,6 +11,7 @@ import {
 } from "@drawguessai/canvas-protocol";
 import {
   GameConfigSchema,
+  POST_GAME_REVIEW_GENERATED_TEXT_LIMIT,
   PostGameReviewSchema,
   PromptMetadataSchema,
   QuickReactionSchema,
@@ -183,7 +184,9 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("postgame.review"),
-      review: PostGameReviewSchema.omit({ at: true }),
+      review: PostGameReviewSchema.omit({ at: true }).extend({
+        text: z.string().min(1).max(POST_GAME_REVIEW_GENERATED_TEXT_LIMIT)
+      }),
       hostToken: z.string()
     })
     .strict(),

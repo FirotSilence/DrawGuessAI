@@ -1,25 +1,39 @@
 import {
+  BRUSH_PRESETS,
   BRUSH_WIDTHS,
   CANVAS_HEIGHT,
   CANVAS_WIDTH,
-  CONSTANT_STROKE_WIDTH_PROFILE,
   MASTER_PALETTE,
   MAX_FILLS_PER_TURN,
   activeCanvasMarkCommands,
   quantizePoint,
   simplifyStroke,
   toCanvasCommandOffsetMs,
+  type BrushPreset,
   type CanvasCommand,
   type CanvasMarkCommand,
   type FillCommand,
   type Point,
   type StrokeCommand
 } from "@drawguessai/canvas-protocol";
-import { Check, Eraser, PaintBucket, Paintbrush, Undo2 } from "lucide-react";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  Check,
+  Eraser,
+  Highlighter,
+  PaintBucket,
+  Paintbrush,
+  PenLine,
+  Pencil,
+  Undo2
+} from "lucide-react";
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 
-import { commandsAtPlaybackProgress, playbackProgressForRender } from "../lib/canvas-playback";
+import {
+  canvasPlaybackFrameAtProgress,
+  liveCanvasPlaybackCursor,
+  playbackProgressForRender
+} from "../lib/canvas-playback";
 import { drawStroke, renderCanvasCommands } from "../lib/canvas-renderer";
 
 interface CanvasBoardProps {
@@ -71,6 +85,8 @@ export function CanvasBoard({
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const livePoints = useRef<Point[]>([]);
+  const liveStrokeId = useRef<string | undefined>(undefined);
+  const liveCanvasBase = useRef<ImageData | undefined>(undefined);
   const commandClock = useRef({ key: commandClockKey, startedAtMs: performance.now() });
   if (commandClock.current.key !== commandClockKey) {
     commandClock.current = { key: commandClockKey, startedAtMs: performance.now() };
@@ -78,6 +94,7 @@ export function CanvasBoard({
   const commandOffsetMs = () =>
     toCanvasCommandOffsetMs(performance.now(), commandClock.current.startedAtMs);
   const [tool, setTool] = useState<"pen" | "eraser" | "fill">("pen");
+  const [brushPreset, setBrushPreset] = useState<BrushPreset>("ink");
   const [color, setColor] = useState<string>(MASTER_PALETTE[0]);
   const [width, setWidth] = useState<(typeof BRUSH_WIDTHS)[number]>(8);
   const strokeCount = commands.filter(
@@ -99,9 +116,13 @@ export function CanvasBoard({
     playbackIdentity,
     playbackState.progress
   );
-  const renderedCommands = useMemo(
-    () => commandsAtPlaybackProgress(commands, playbackProgress),
+  const playbackFrame = useMemo(
+    () => canvasPlaybackFrameAtProgress(commands, playbackProgress),
     [commands, playbackProgress]
+  );
+  const playbackCursor = useMemo(
+    () => playbackFrame.cursor ?? (livePlayback ? liveCanvasPlaybackCursor(commands) : undefined),
+    [commands, livePlayback, playbackFrame.cursor]
   );
 
   useLayoutEffect(() => {
@@ -132,8 +153,10 @@ export function CanvasBoard({
   useLayoutEffect(() => {
     const canvas = canvasRef.current;
     const context = canvas?.getContext("2d");
-    if (context !== null && context !== undefined) renderCanvasCommands(context, renderedCommands);
-  }, [renderedCommands]);
+    if (context !== null && context !== undefined) {
+      renderCanvasCommands(context, playbackFrame.commands);
+    }
+  }, [playbackFrame]);
 
   const begin = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (
@@ -157,6 +180,9 @@ export function CanvasBoard({
       return;
     }
     event.currentTarget.setPointerCapture(event.pointerId);
+    liveStrokeId.current = crypto.randomUUID();
+    const context = event.currentTarget.getContext("2d");
+    liveCanvasBase.current = context?.getImageData(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     livePoints.current = [point];
     onPreview?.(point);
   };
@@ -165,18 +191,19 @@ export function CanvasBoard({
     if (!editable || tool === "fill" || livePoints.current.length === 0) return;
     const canvas = event.currentTarget;
     const point = logicalPoint(canvas, event);
-    const previous = livePoints.current.at(-1)!;
     livePoints.current.push(point);
     const context = canvas.getContext("2d");
     if (context !== null) {
+      const base = liveCanvasBase.current;
+      if (base !== undefined) context.putImageData(base, 0, 0);
       drawStroke(context, {
         type: "stroke",
-        id: "live",
+        id: liveStrokeId.current ?? "live",
         tool,
+        ...(tool === "pen" ? { brushPreset } : {}),
         color,
         width,
-        widthProfile: CONSTANT_STROKE_WIDTH_PROFILE,
-        points: [previous, point],
+        points: livePoints.current,
         offsetMs: 0
       });
     }
@@ -190,17 +217,23 @@ export function CanvasBoard({
     }
     const points = simplifyStroke(livePoints.current);
     livePoints.current = [];
+    liveCanvasBase.current = undefined;
     onPreview?.(null);
-    if (points.length < 2) return;
+    if (points.length < 2) {
+      liveStrokeId.current = undefined;
+      return;
+    }
     const next: StrokeCommand = {
       type: "stroke",
-      id: crypto.randomUUID(),
+      id: liveStrokeId.current ?? crypto.randomUUID(),
       tool,
+      ...(tool === "pen" ? { brushPreset } : {}),
       color,
       width,
       points,
       offsetMs: commandOffsetMs()
     };
+    liveStrokeId.current = undefined;
     onStrokePreview?.(next);
     onChange?.([...commands, next]);
   };
@@ -247,6 +280,33 @@ export function CanvasBoard({
             />
           )
         )}
+        {playbackCursor !== undefined && (playbackProgress < 1 || livePlayback) && (
+          <span
+            className="ai-playback-cursor"
+            data-brush={playbackCursor.brushPreset}
+            data-tool={playbackCursor.tool}
+            style={
+              {
+                left: `${(playbackCursor.point.x / CANVAS_WIDTH) * 100}%`,
+                top: `${(playbackCursor.point.y / CANVAS_HEIGHT) * 100}%`,
+                color: playbackCursor.tool === "eraser" ? "#202124" : playbackCursor.color,
+                "--playback-angle": `${playbackCursor.angleDeg + 45}deg`
+              } as CSSProperties
+            }
+          >
+            {playbackCursor.tool === "eraser" ? (
+              <Eraser size={20} />
+            ) : playbackCursor.brushPreset === "pencil" ? (
+              <Pencil size={20} />
+            ) : playbackCursor.brushPreset === "marker" ? (
+              <Highlighter size={20} />
+            ) : playbackCursor.brushPreset === "paint" ? (
+              <Paintbrush size={20} />
+            ) : (
+              <PenLine size={20} />
+            )}
+          </span>
+        )}
         {(playbackProgress < 1 || livePlayback) && (
           <div className="canvas-playback-status" aria-live="polite">
             <Paintbrush size={15} />
@@ -287,6 +347,35 @@ export function CanvasBoard({
               <PaintBucket size={19} />
             </button>
           </div>
+          <label
+            className="brush-preset-control"
+            title={`${t("brushStyle")}: ${t(`brushPresets.${brushPreset}`)}`}
+          >
+            {brushPreset === "pencil" ? (
+              <Pencil aria-hidden="true" size={17} />
+            ) : brushPreset === "marker" ? (
+              <Highlighter aria-hidden="true" size={17} />
+            ) : brushPreset === "paint" ? (
+              <Paintbrush aria-hidden="true" size={17} />
+            ) : (
+              <PenLine aria-hidden="true" size={17} />
+            )}
+            <span className="sr-only">{t("brushStyle")}</span>
+            <select
+              aria-label={t("brushStyle")}
+              value={brushPreset}
+              onChange={(event) => {
+                setBrushPreset(event.target.value as BrushPreset);
+                setTool("pen");
+              }}
+            >
+              {BRUSH_PRESETS.map((preset) => (
+                <option key={preset} value={preset}>
+                  {t(`brushPresets.${preset}`)}
+                </option>
+              ))}
+            </select>
+          </label>
           <div className="color-swatches" aria-label={t("colorCount")}>
             {MASTER_PALETTE.slice(0, colorCount).map((item) => (
               <button
@@ -321,7 +410,7 @@ export function CanvasBoard({
             {strokeCount}/{maxStrokes}
           </span>
           <button
-            className="icon-button"
+            className="icon-button toolbar-undo"
             type="button"
             title={t("undo")}
             aria-label={t("undo")}

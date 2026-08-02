@@ -1,4 +1,5 @@
 import {
+  buildReviewConversationContext,
   reviewActionRespectsTargetRole,
   type AiReviewActor,
   type AiSocialAction,
@@ -231,17 +232,7 @@ export function buildPostGameReviewContext(
         .map((slot) => `${actor.actorId}/${actor.displayName}: ${ownTurnLine(state, slot, "THEY")}`)
     );
   const directHumanLinks = directHumanLinkLines(state, actorId);
-  const earlier = reviews
-    .filter((review) => review.status !== "departed")
-    .map((review) => {
-      const actions = (review.actions ?? [])
-        .map(
-          (action) =>
-            `${action.reaction}->${action.targetSeatId}${action.targetTurnIndex === undefined ? "" : `@T${action.targetTurnIndex + 1}`}`
-        )
-        .join(",");
-      return `${review.seatId}/${review.displayName}: ${compact(review.text, 48)}${actions === "" ? "" : ` [${actions}]`}`;
-    });
+  const conversation = buildReviewConversationContext(reviews, actorId);
   const finalResult =
     finalArtifact?.kind === "guess"
       ? finalArtifact.text
@@ -269,7 +260,7 @@ export function buildPostGameReviewContext(
     `YOUR TURNS: ${ownTurns.length === 0 ? "none" : ownTurns.join(" | ")}`,
     `DIRECT HUMAN LINKS: ${directHumanLinks.length === 0 ? "none" : directHumanLinks.join(" | ")}`,
     ...(humanTurns.length === 0 ? [] : [`HUMAN PARTICIPATION: ${humanTurns.join(" | ")}`]),
-    ...(earlier.length === 0 ? [] : [`EARLIER TABLE TALK: ${earlier.join(" | ")}`])
+    ...conversation
   ]);
 }
 

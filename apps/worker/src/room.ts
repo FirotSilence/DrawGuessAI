@@ -3,6 +3,7 @@ import {
   AI_PERSONAS,
   AiTurnJobSchema,
   AiTurnResultSchema,
+  buildReviewConversationContext,
   createDemoTurnResult,
   isLiveReactionSpoilerFree,
   modelSupportsRole,
@@ -36,7 +37,6 @@ import {
   type Participant,
   type PostGameAction,
   type PostGameReview,
-  type PromptKind,
   type ReactionRecord,
   type TimelineSlot
 } from "@drawguessai/game-core";
@@ -310,17 +310,8 @@ function normalizedAiErrorCode(value: string | undefined): string {
   return normalized === undefined || normalized === "" ? "model-error" : normalized;
 }
 
-function promptKindForEntry(entry: PromptEntry): PromptKind {
-  if (entry.category === "idioms") return "idiom";
-  if (entry.category === "proverbs") return "proverb";
-  if (entry.category === "poem-lines") return "poem-line";
-  if (entry.category === "xiehouyu") return "xiehouyu";
-  if (entry.category === "objects" || entry.category === "animals") return "word";
-  return "phrase";
-}
-
 function promptMetadataForEntry(entry: PromptEntry, locale: GameState["config"]["locale"]) {
-  return createPromptMetadata(entry.texts[locale], locale, promptKindForEntry(entry), entry.topic);
+  return createPromptMetadata(entry.texts[locale], locale, entry.kind, entry.topic);
 }
 
 function promptMetadataForGuess(
@@ -507,9 +498,6 @@ function automatedReviewContext(
       const artifact = artifactForTurn(state, slot.index);
       return `T${slot.index + 1}:${slot.role} output=${JSON.stringify(artifact?.kind === "guess" ? artifact.text : "[drawing]")}`;
     });
-  const earlier = published
-    .filter((review) => review.status !== "departed")
-    .map((review) => `${review.seatId}: ${review.text.replace(/\s+/g, " ").trim().slice(0, 120)}`);
   return [
     `SELF_ACTOR_ID=${actorId}`,
     `SELF ROLE: ${ownRole.toUpperCase()}`,
@@ -523,7 +511,7 @@ function automatedReviewContext(
     "HANDOFFS:",
     ...handoffs,
     `YOUR TURNS: ${ownTurns.join(" | ")}`,
-    ...(earlier.length === 0 ? [] : [`EARLIER TABLE TALK: ${earlier.join(" | ")}`])
+    ...buildReviewConversationContext(published, actorId)
   ]
     .join("\n")
     .slice(0, 5_600);
@@ -1094,7 +1082,10 @@ export class RoomObject {
       "public",
       "system-auto-host"
     );
-    const prompt = selectPrompt({ seed: `${state.seed}:${state.seq}` });
+    const prompt = selectPrompt({
+      seed: `${state.seed}:${state.seq}`,
+      locale: state.config.locale
+    });
     state = await this.applyAndBroadcast(
       state,
       {
@@ -2174,9 +2165,13 @@ export class RoomObject {
         }
         if (
           requestedPrompt?.source === "custom" &&
-          !validatePlayablePromptText(requestedPrompt.text).ok
+          !validatePlayablePromptText(
+            requestedPrompt.text,
+            requestedPrompt.metadata.kind,
+            requestedPrompt.metadata.language
+          ).ok
         ) {
-          throw new Error("Prompt must be a short, all-ages word or phrase");
+          throw new Error("Prompt must be a compact, all-ages lexical entry or established saying");
         }
         const incapableTurn = state.timeline.find((slot) => {
           if (slot.actorType !== "ai") return false;
@@ -2208,7 +2203,10 @@ export class RoomObject {
           participantId
         );
         if (promptSource === "curated") {
-          const prompt = selectPrompt({ seed: `${state.seed}:${state.seq}` });
+          const prompt = selectPrompt({
+            seed: `${state.seed}:${state.seq}`,
+            locale: state.config.locale
+          });
           state = await this.applyAndBroadcast(
             state,
             {
@@ -2251,8 +2249,14 @@ export class RoomObject {
       }
       case "prompt.select": {
         if (participant.roomRole !== "host") throw new Error("Only the host can submit a prompt");
-        if (!validatePlayablePromptText(message.text).ok)
-          throw new Error("Prompt must be a short, all-ages word or phrase");
+        if (
+          !validatePlayablePromptText(
+            message.text,
+            message.metadata.kind,
+            message.metadata.language
+          ).ok
+        )
+          throw new Error("Prompt must be a compact, all-ages lexical entry or established saying");
         if (
           state.config.mode === "blind-relay" &&
           state.config.promptSource === "custom" &&
@@ -2552,7 +2556,10 @@ export class RoomObject {
           throw new Error("AI failure is stale");
         }
         if (meta.pendingAiJob.job.role === "prompt") {
-          const prompt = selectPrompt({ seed: `${state.seed}:prompt-failure:${state.seq}` });
+          const prompt = selectPrompt({
+            seed: `${state.seed}:prompt-failure:${state.seq}`,
+            locale: state.config.locale
+          });
           state = await this.applyAndBroadcast(
             state,
             {
@@ -2588,11 +2595,13 @@ export class RoomObject {
         if (meta.pendingAiJob?.job.jobId !== result.jobId) throw new Error("AI result is stale");
         if (meta.pendingAiJob.job.role === "prompt") {
           const generated = result.prompt;
+          const generatedKind = result.promptKind ?? "phrase";
+          const generatedIsPlayable =
+            generated !== undefined &&
+            validatePlayablePromptText(generated, generatedKind, state.config.locale).ok;
           const reactionIsSafe = isLiveReactionSpoilerFree(result, meta.pendingAiJob.job);
           if (
-            (generated === undefined ||
-              !validatePlayablePromptText(generated).ok ||
-              !reactionIsSafe) &&
+            (!generatedIsPlayable || !reactionIsSafe) &&
             (meta.generatedPromptAttempts ?? 1) < 3
           ) {
             delete meta.pendingAiJob;
@@ -2600,17 +2609,19 @@ export class RoomObject {
             await this.issuePromptJob(state, meta);
             return;
           }
-          const generatedIsValid =
-            reactionIsSafe && generated !== undefined && validatePlayablePromptText(generated).ok;
+          const generatedIsValid = reactionIsSafe && generatedIsPlayable;
           const fallbackPrompt = generatedIsValid
             ? undefined
-            : selectPrompt({ seed: `${state.seed}:generated-fallback:${state.seq}` });
+            : selectPrompt({
+                seed: `${state.seed}:generated-fallback:${state.seq}`,
+                locale: state.config.locale
+              });
           const text = generatedIsValid ? generated! : fallbackPrompt!.texts[state.config.locale];
           const metadata = generatedIsValid
             ? createPromptMetadata(
                 text,
                 state.config.locale,
-                result.promptKind ?? "phrase",
+                generatedKind,
                 result.promptTopic ?? "other"
               )
             : promptMetadataForEntry(fallbackPrompt!, state.config.locale);
@@ -3606,7 +3617,10 @@ export class RoomObject {
         await this.scheduleRoomAlarm(meta, meta.promptExpiresAt);
         return;
       }
-      const prompt = selectPrompt({ seed: `${state.seed}:prompt-timeout:${state.seq}` });
+      const prompt = selectPrompt({
+        seed: `${state.seed}:prompt-timeout:${state.seq}`,
+        locale: state.config.locale
+      });
       state = await this.applyAndBroadcast(
         state,
         {

@@ -3,6 +3,10 @@ import {
   MAX_POINTS_PER_TURN,
   validateCanvasCommands
 } from "@drawguessai/canvas-protocol";
+import {
+  POST_GAME_REVIEW_GENERATED_TEXT_LIMIT,
+  POST_GAME_REVIEW_RECOMMENDED_TEXT_LIMIT
+} from "@drawguessai/game-core";
 
 import { getPersona } from "./personas";
 import { parseAiTurnResult } from "./parse";
@@ -260,7 +264,8 @@ function anthropicBody(
 }
 
 export function modelTemperatureForJob(job: AiTurnJob): number {
-  return job.role === "draw" || job.role === "guess" ? 0.45 : 0.8;
+  if (job.role === "draw" || job.role === "guess") return 0.45;
+  return job.role === "review" ? 0.95 : 0.8;
 }
 
 export function modelMaxTokensForJob(job: AiTurnJob): number {
@@ -321,6 +326,9 @@ export function aiRepairInstruction(job: AiTurnJob, error: unknown): string {
   }
   if (error instanceof AiAdapterError && error.message.includes("Live reaction")) {
     return "Your previous reaction leaked hidden content. Return one corrected JSON object. Replace reaction.text with content-free first-person emotion only, written as though the prompt, guess, image, and commands were redacted. Do not mention or imply anything drawn, guessed, seen, located, shaped, colored, counted, or related; if it could narrow the answer, rewrite it.";
+  }
+  if (job.role === "review" && /review\.text/iu.test(detail)) {
+    return `Your previous review.text was invalid or too long: ${detail}. Rewrite the main table line as a complete thought, aim for at most ${POST_GAME_REVIEW_RECOMMENDED_TEXT_LIMIT} characters, and never exceed ${POST_GAME_REVIEW_GENERATED_TEXT_LIMIT} characters. Return one corrected JSON object.`;
   }
   if (
     job.role === "review" &&

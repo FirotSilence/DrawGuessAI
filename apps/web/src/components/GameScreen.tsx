@@ -17,6 +17,7 @@ import {
   type PromptTopic
 } from "@drawguessai/game-core";
 import type { AiActivity, ClientMessage } from "@drawguessai/network-protocol";
+import { validatePlayablePromptText } from "@drawguessai/word-bank";
 import {
   BrainCircuit,
   CheckCircle2,
@@ -118,6 +119,7 @@ export function GameScreen({
   const [promptLanguage, setPromptLanguage] = useState<GameLocale>(state.config.locale);
   const [promptKind, setPromptKind] = useState<PromptKind>("phrase");
   const [promptTopic, setPromptTopic] = useState<PromptTopic>("other");
+  const promptIsValid = validatePlayablePromptText(prompt.trim(), promptKind, promptLanguage).ok;
   const [spoilersUnlocked, setSpoilersUnlocked] = useState(false);
   const [deadline, setDeadline] = useState(Date.now());
   const [now, setNow] = useState(Date.now());
@@ -221,7 +223,7 @@ export function GameScreen({
             <form
               onSubmit={(event) => {
                 event.preventDefault();
-                if (prompt.trim() !== "" && session.hostToken !== undefined) {
+                if (promptIsValid && session.hostToken !== undefined) {
                   send({
                     type: "prompt.select",
                     text: prompt.trim(),
@@ -248,7 +250,13 @@ export function GameScreen({
                   <span>{t("promptLanguage")}</span>
                   <select
                     value={promptLanguage}
-                    onChange={(event) => setPromptLanguage(event.target.value as GameLocale)}
+                    onChange={(event) => {
+                      const nextLanguage = event.target.value as GameLocale;
+                      setPromptLanguage(nextLanguage);
+                      if (nextLanguage === "en" && promptKind === "poem-line") {
+                        setPromptKind("phrase");
+                      }
+                    }}
                   >
                     <option value="zh-CN">{t("promptLanguageChinese")}</option>
                     <option value="en">{t("promptLanguageEnglish")}</option>
@@ -264,7 +272,9 @@ export function GameScreen({
                     <option value="phrase">{t("promptKindPhrase")}</option>
                     <option value="idiom">{t("promptKindIdiom")}</option>
                     <option value="proverb">{t("promptKindProverb")}</option>
-                    <option value="poem-line">{t("promptKindPoemLine")}</option>
+                    {promptLanguage === "zh-CN" && (
+                      <option value="poem-line">{t("promptKindPoemLine")}</option>
+                    )}
                     <option value="xiehouyu">{t("promptKindXiehouyu")}</option>
                   </select>
                 </label>
@@ -297,7 +307,7 @@ export function GameScreen({
                   />
                 )}
               </div>
-              <button className="primary-button" type="submit">
+              <button className="primary-button" type="submit" disabled={!promptIsValid}>
                 {t("submitPrompt")}
               </button>
             </form>

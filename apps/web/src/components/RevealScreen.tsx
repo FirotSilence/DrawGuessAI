@@ -241,7 +241,13 @@ export function RevealScreen({
   return (
     <main className="reveal-screen">
       <header className="reveal-header">
-        <button className="icon-button" type="button" title={t("back")} onClick={onBack}>
+        <button
+          className="icon-button"
+          type="button"
+          aria-label={t("back")}
+          title={t("back")}
+          onClick={onBack}
+        >
           <ArrowLeft size={19} />
         </button>
         <div>
@@ -259,7 +265,13 @@ export function RevealScreen({
         <div className="reveal-actions">
           <SourceLink />
           {state.replayToken !== undefined && (
-            <button className="secondary-button" type="button" onClick={() => void copyReplay()}>
+            <button
+              className="secondary-button"
+              type="button"
+              aria-label={copied ? t("copied") : t("copyReplay")}
+              title={copied ? t("copied") : t("copyReplay")}
+              onClick={() => void copyReplay()}
+            >
               <Link2 size={17} />
               {copied ? t("copied") : t("copyReplay")}
             </button>
@@ -279,12 +291,24 @@ export function RevealScreen({
             </button>
           )}
           {onRestart !== undefined && (
-            <button className="secondary-button" type="button" onClick={onRestart}>
+            <button
+              className="secondary-button"
+              type="button"
+              aria-label={t("playAgain")}
+              title={t("playAgain")}
+              onClick={onRestart}
+            >
               <RotateCcw size={17} />
               {t("playAgain")}
             </button>
           )}
-          <button className="primary-button" type="button" onClick={exportReplay}>
+          <button
+            className="primary-button"
+            type="button"
+            aria-label={t("exportReplay")}
+            title={t("exportReplay")}
+            onClick={exportReplay}
+          >
             <Download size={17} />
             {t("exportReplay")}
           </button>

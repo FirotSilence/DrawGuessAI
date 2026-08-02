@@ -151,6 +151,22 @@ describe("network protocol", () => {
         hostToken: "host-token"
       }).type
     ).toBe("postgame.review");
+    expect(
+      ClientMessageSchema.safeParse({
+        type: "postgame.review",
+        review: {
+          id: "review-ai-1",
+          seatId: "ai-1",
+          personaId: "deadpan",
+          displayName: "Deadpan",
+          modelLabel: "MiniMax-M3",
+          text: "A".repeat(101),
+          score: 4,
+          reaction: "laugh"
+        },
+        hostToken: "host-token"
+      }).success
+    ).toBe(false);
   });
 
   it("versions clear-and-redraw previews so unordered packets stay idempotent", () => {

@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { validateCanvasCommands } from "@drawguessai/canvas-protocol";
+import {
+  POST_GAME_REVIEW_GENERATED_TEXT_LIMIT,
+  POST_GAME_REVIEW_RECOMMENDED_TEXT_LIMIT
+} from "@drawguessai/game-core";
 
 import {
+  AI_DISPLAY_NAMES,
   AI_PERSONAS,
   AiReviewSchema,
   AiTurnJobSchema,
@@ -16,6 +21,7 @@ import {
   modelMaxTokensForJob,
   modelObservationPassLimit,
   modelSupportsRole,
+  modelTemperatureForJob,
   observationPassLimitForRole,
   parseAiTurnResult,
   parseAiTurnResultForJob,
@@ -68,9 +74,35 @@ function profile(protocol: ModelProfile["protocol"]): ModelProfile {
 }
 
 describe("AI adapters", () => {
-  it("treats review length as style guidance rather than a short hard cutoff", () => {
-    const text = "A".repeat(500);
+  it("keeps Chinese display-name candidates distinct and brand-neutral", () => {
+    expect(AI_DISPLAY_NAMES["zh-CN"]).toContain("南乔");
+    expect(AI_DISPLAY_NAMES["zh-CN"]).not.toContain("元宝");
+    expect(new Set(AI_DISPLAY_NAMES["zh-CN"]).size).toBe(AI_DISPLAY_NAMES["zh-CN"].length);
+  });
+
+  it("recommends compact roundtable lines and enforces the generation ceiling", () => {
+    const text = "A".repeat(POST_GAME_REVIEW_GENERATED_TEXT_LIMIT);
     expect(AiReviewSchema.parse({ text, score: 3 }).text).toBe(text);
+    expect(() => AiReviewSchema.parse({ text: `${text}A`, score: 3 })).toThrow();
+    expect(() =>
+      parseAiTurnResult(
+        JSON.stringify({
+          jobId: "overlong-review",
+          status: "ok",
+          review: { text: `${text}A`, score: 3 },
+          confidence: 0.7,
+          reaction: { kind: "confused", text: "Wait." }
+        }),
+        "overlong-review"
+      )
+    ).toThrow();
+    expect(POST_GAME_REVIEW_RECOMMENDED_TEXT_LIMIT).toBe(50);
+    expect(POST_GAME_REVIEW_GENERATED_TEXT_LIMIT).toBe(100);
+  });
+
+  it("gives roundtable turns more sampling freedom than factual turns", () => {
+    expect(modelTemperatureForJob({ ...job, role: "review", imageDataUrl: undefined })).toBe(0.95);
+    expect(modelTemperatureForJob(job)).toBe(0.45);
   });
 
   it("includes and validates the real turn deadline in every model job", () => {
@@ -305,14 +337,19 @@ describe("AI adapters", () => {
     };
     const inlineSystem = buildSystemPrompt(inlineJob);
     expect(inlineSystem).toContain("choose one compact composition privately");
-    expect(inlineSystem).toContain("Do not default to horizontal and vertical construction");
-    expect(inlineSystem).toContain("rotated ellipses, arcs, cubic curves, paths");
+    expect(inlineSystem).toContain("Choose and combine them freely");
+    expect(inlineSystem).toContain("none is preferred by default");
+    expect(inlineSystem).toContain("Straight, axis-aligned, curved, rotated, asymmetric");
+    expect(inlineSystem).toContain("arcThrough, quadratic, curve, spline");
+    expect(inlineSystem).not.toContain("Use brushPreset only when it improves expression");
+    expect(inlineSystem).not.toContain("Prefer line, polyline");
     expect(inlineSystem).toContain('"id":"back-contour"');
     expect(inlineSystem).toContain("clearest, most recognizable drawing you can");
     expect(inlineSystem).toContain("Invalid individual commands may be skipped");
-    expect(inlineSystem).toContain("Reaction voice only:");
-    expect(inlineSystem).toContain("never changes the drawing commands");
-    expect(inlineSystem).not.toContain("Persona affects visual style only");
+    expect(inlineSystem).toContain("Drawing character:");
+    expect(inlineSystem).toContain("Turn reaction voice:");
+    expect(inlineSystem).toContain("independently controls the visual style");
+    expect(inlineSystem).not.toContain("controls reaction.text only");
     expect(buildUserPrompt(inlineJob)).not.toContain("DRAWING_PLAN");
 
     const planJob: AiTurnJob = {
@@ -327,6 +364,7 @@ describe("AI adapters", () => {
     expect(buildSystemPrompt(planJob)).toContain("scene plan");
     expect(buildSystemPrompt(planJob)).toContain("Do not return canvas commands");
     expect(buildSystemPrompt(planJob)).toContain("Bounding boxes are placement guides");
+    expect(buildSystemPrompt(planJob)).toContain("Drawing character:");
 
     const planned = parseAiTurnResultForJob(
       JSON.stringify({
@@ -815,6 +853,82 @@ describe("AI adapters", () => {
     });
   });
 
+  it("compiles model-friendly curves and deterministic brush presets", () => {
+    const drawJob: AiTurnJob = {
+      ...job,
+      jobId: "expressive-curves",
+      role: "draw",
+      imageDataUrl: undefined,
+      inputText: "a bird in flight"
+    };
+    const result = parseAiTurnResultForJob(
+      JSON.stringify({
+        jobId: drawJob.jobId,
+        status: "ok",
+        confidence: 0.82,
+        reaction: { kind: "spark", text: "That felt unusually smooth." },
+        clearCanvas: false,
+        commands: [
+          {
+            type: "quadratic",
+            id: "wing-edge",
+            brushPreset: "pencil",
+            start: [120, 360],
+            control: [280, 160],
+            end: [470, 330]
+          },
+          {
+            type: "spline",
+            id: "body",
+            brush: "brush",
+            points: [
+              [360, 320],
+              [500, 240],
+              [690, 320],
+              [620, 470],
+              [410, 460]
+            ],
+            closed: true,
+            fill: true
+          },
+          {
+            type: "arc-through",
+            id: "flight-arc",
+            brushPreset: "marker",
+            start: [180, 580],
+            through: [500, 500],
+            end: [820, 580]
+          }
+        ]
+      }),
+      drawJob
+    );
+
+    expect(result.sourceCommands?.map((command) => command.type)).toEqual([
+      "quadratic",
+      "spline",
+      "arcThrough"
+    ]);
+    expect(result.commands).toHaveLength(3);
+    expect(result.commands?.[0]).toMatchObject({ type: "stroke", brushPreset: "pencil" });
+    expect(result.commands?.[1]).toMatchObject({
+      type: "stroke",
+      brushPreset: "paint",
+      closed: true,
+      fillColor: "#202124"
+    });
+    expect(result.commands?.[2]).toMatchObject({ type: "stroke", brushPreset: "marker" });
+    if (result.commands?.[2]?.type === "stroke") {
+      expect(result.commands[2].points).toContainEqual({ x: 500, y: 500 });
+    }
+    for (const command of result.commands ?? []) {
+      if (command.type === "stroke") {
+        expect(command.points.length).toBeGreaterThan(2);
+        expect(command.points.length).toBeLessThanOrEqual(96);
+      }
+    }
+  });
+
   it("provides a credential-free deterministic demo", async () => {
     const drawJob = { ...job, role: "draw" as const, imageDataUrl: undefined };
     const result = await executeAiTurn({ profile: profile("demo"), job: drawJob });
@@ -830,12 +944,17 @@ describe("AI adapters", () => {
       imageDataUrl: undefined,
       inputText: "Original prompt: umbrella. Final result: jellyfish."
     };
-    expect(buildSystemPrompt(reviewJob)).toContain("after-game table");
-    expect(buildSystemPrompt(reviewJob)).toContain("usually one short sentence");
-    expect(buildSystemPrompt(reviewJob)).toContain("suggestion, not a hard limit");
-    expect(buildSystemPrompt(reviewJob)).toContain("plain, concrete, concise");
-    expect(buildSystemPrompt(reviewJob)).toContain("Avoid strained metaphors");
-    expect(buildSystemPrompt(reviewJob)).toContain("character monologue");
+    const systemPrompt = buildSystemPrompt(reviewJob);
+    const userPrompt = buildUserPrompt(reviewJob);
+    expect(systemPrompt).toContain("after-game table");
+    expect(systemPrompt).toContain("Choose your own conversational move");
+    expect(systemPrompt).toContain("quick interjection");
+    expect(systemPrompt).toContain("review.text may address another player directly");
+    expect(systemPrompt).toContain("set replyToActorId");
+    expect(systemPrompt).toContain("Persona should materially shape");
+    expect(systemPrompt).toContain("no more than 50 characters");
+    expect(systemPrompt).toContain("hard 100-character schema limit");
+    expect(systemPrompt).toContain("if the name tag were hidden");
     expect(buildSystemPrompt(reviewJob)).toContain("Never praise a miss");
     expect(buildSystemPrompt(reviewJob)).toContain("Do not recap the relay");
     expect(buildSystemPrompt(reviewJob)).toContain("ORIGINAL PROMPT");
@@ -845,10 +964,12 @@ describe("AI adapters", () => {
     expect(buildSystemPrompt(reviewJob)).toContain("replyToActorId");
     expect(buildSystemPrompt(reviewJob)).not.toContain("replyToPersonaId");
     expect(buildSystemPrompt(reviewJob)).not.toContain("chain of thought");
-    expect(buildUserPrompt(reviewJob)).toContain("without forcing a hard word limit");
-    expect(buildUserPrompt(reviewJob)).toContain("not as a narrator, critic, object");
-    expect(buildUserPrompt(reviewJob)).toContain("at least one honest directed emoji action");
-    expect(buildUserPrompt(reviewJob)).toContain("do not repeat the chain");
+    expect(systemPrompt).not.toContain("usually one short sentence");
+    expect(userPrompt).toContain("Decide for yourself whether to answer someone");
+    expect(userPrompt).toContain("not as a narrator, critic, object");
+    expect(userPrompt).toContain("at least one honest directed emoji action");
+    expect(userPrompt).toContain("Do not default to the recap formula");
+    expect(userPrompt).not.toContain("Pick one fresh concrete point");
     const result = await executeAiTurn({ profile: profile("demo"), job: reviewJob });
     expect(result.review?.text).toBeTruthy();
     expect(result.review?.score).toBeGreaterThanOrEqual(1);
@@ -1041,10 +1162,12 @@ describe("AI adapters", () => {
     ]);
   });
 
-  it("gives every persona a distinct roundtable voice without recycled blame slogans", () => {
+  it("gives every persona a distinct drawing character and speaking voice", () => {
     const liveInstructions = AI_PERSONAS.map((persona) => persona.instruction);
+    const drawingInstructions = AI_PERSONAS.map((persona) => persona.drawingInstruction);
     const reviewInstructions = AI_PERSONAS.map((persona) => persona.reviewInstruction);
     expect(new Set(liveInstructions).size).toBe(AI_PERSONAS.length);
+    expect(new Set(drawingInstructions).size).toBe(AI_PERSONAS.length);
     expect(new Set(reviewInstructions).size).toBe(AI_PERSONAS.length);
     for (const persona of AI_PERSONAS) {
       const personaDrawPrompt = buildSystemPrompt({
@@ -1056,8 +1179,19 @@ describe("AI adapters", () => {
         inputText: "a familiar scene",
         drawPhase: "render"
       });
-      expect(personaDrawPrompt).toContain(`Reaction voice only: ${persona.instruction}`);
-      expect(personaDrawPrompt).toContain("never changes the drawing commands");
+      expect(personaDrawPrompt).toContain(`Drawing character: ${persona.drawingInstruction}`);
+      expect(personaDrawPrompt).toContain(`Turn reaction voice: ${persona.instruction}`);
+      expect(personaDrawPrompt).toContain("Style must never reduce effort");
+
+      const personaReviewPrompt = buildSystemPrompt({
+        ...job,
+        jobId: `persona-review-${persona.id}`,
+        role: "review",
+        turnIndex: -1,
+        personaId: persona.id,
+        imageDataUrl: undefined
+      });
+      expect(personaReviewPrompt).toContain(`Roundtable persona: ${persona.reviewInstruction}`);
     }
     const lines = AI_PERSONAS.map((persona) => {
       const result = createDemoTurnResult({
@@ -1071,6 +1205,7 @@ describe("AI adapters", () => {
       return result.review?.text ?? "";
     });
     expect(new Set(lines).size).toBe(AI_PERSONAS.length);
+    expect(lines.every((line) => line.length <= POST_GAME_REVIEW_GENERATED_TEXT_LIMIT)).toBe(true);
     expect(lines.join("\n")).not.toMatch(/背锅|这锅|认一半|责任均摊/);
   });
 
@@ -1132,7 +1267,21 @@ describe("AI adapters", () => {
       turnIndex: -1,
       imageDataUrl: undefined
     };
-    expect(buildSystemPrompt(promptJob)).toContain('"promptTopic"');
+    const systemPrompt = buildSystemPrompt(promptJob);
+    expect(systemPrompt).toContain('"promptTopic"');
+    expect(systemPrompt).toContain('"promptKind":"word|phrase|idiom|proverb|xiehouyu"');
+    expect(systemPrompt).toContain("dictionary-style entry or established saying");
+    expect(systemPrompt).toContain("Never return a poem line");
+    expect(systemPrompt).toContain("complete subject-predicate sentence");
+    expect(buildUserPrompt(promptJob)).toContain("Do not write a poem line, complete sentence");
+    const chinesePromptJob = { ...promptJob, locale: "zh-CN" as const };
+    const chineseSystemPrompt = buildSystemPrompt(chinesePromptJob);
+    expect(chineseSystemPrompt).toContain(
+      '"promptKind":"word|phrase|idiom|proverb|poem-line|xiehouyu"'
+    );
+    expect(chineseSystemPrompt).toContain("widely known Chinese classical poem line");
+    expect(chineseSystemPrompt).toContain("A poem line is allowed only in Chinese");
+    expect(buildUserPrompt(chinesePromptJob)).toContain("Chinese classical poem line");
     expect(createDemoTurnResult(promptJob).promptTopic).toBe("action");
   });
 
