@@ -1,6 +1,15 @@
 import { PromptTopicSchema } from "@drawguessai/game-core";
 import { z } from "zod";
 
+export const PlayablePromptKindSchema = z.enum([
+  "word",
+  "phrase",
+  "idiom",
+  "proverb",
+  "poem-line",
+  "xiehouyu"
+]);
+
 export const PromptCategorySchema = z.enum([
   "objects",
   "animals",
@@ -12,6 +21,7 @@ export const PromptCategorySchema = z.enum([
   "food-scenes",
   "transport-travel",
   "festivals-culture",
+  "places",
   "idioms",
   "proverbs",
   "poem-lines",
@@ -30,6 +40,7 @@ export const PromptEntrySchema = z
       })
       .strict(),
     category: PromptCategorySchema,
+    kind: PlayablePromptKindSchema,
     topic: PromptTopicSchema,
     difficulty: PromptDifficultySchema,
     drawability: z.number().int().min(1).max(5),
@@ -44,4 +55,5 @@ export const PromptEntrySchema = z
 
 export type PromptCategory = z.infer<typeof PromptCategorySchema>;
 export type PromptDifficulty = z.infer<typeof PromptDifficultySchema>;
+export type PlayablePromptKind = z.infer<typeof PlayablePromptKindSchema>;
 export type PromptEntry = z.infer<typeof PromptEntrySchema>;

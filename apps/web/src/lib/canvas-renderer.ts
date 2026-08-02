@@ -1,48 +1,47 @@
 import {
   CANVAS_HEIGHT,
   CANVAS_WIDTH,
-  CONSTANT_STROKE_WIDTH_PROFILE,
-  DEFAULT_STROKE_WIDTH_PROFILE,
   PAPER_COLOR,
   activeCanvasMarkCommands,
+  brushLayersForStroke,
+  strokeWidthProfileForRender,
+  strokeWidthScaleAt,
+  type BrushRenderPoint,
   type CanvasCommand,
   type FillCommand,
   type StrokeCommand,
   type StrokeWidthProfile
 } from "@drawguessai/canvas-protocol";
 
+export { strokeWidthScaleAt } from "@drawguessai/canvas-protocol";
+
 type CanvasContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
 export const AI_CANVAS_IMAGE_SIZE = { width: 640, height: 480 } as const;
 
-function smoothStep(value: number): number {
-  const clamped = Math.max(0, Math.min(1, value));
-  return clamped * clamped * (3 - 2 * clamped);
-}
-
-export function strokeWidthScaleAt(profile: StrokeWidthProfile, progress: number): number {
-  const clamped = Math.max(0, Math.min(1, progress));
-  if (clamped <= profile.peakAt) {
-    const amount = smoothStep(clamped / profile.peakAt);
-    return profile.startScale + (profile.peakScale - profile.startScale) * amount;
-  }
-  const amount = smoothStep((clamped - profile.peakAt) / (1 - profile.peakAt));
-  return profile.peakScale + (profile.endScale - profile.peakScale) * amount;
-}
-
-function traceStrokePath(context: CanvasContext, stroke: StrokeCommand): void {
+function traceStrokePath(
+  context: CanvasContext,
+  points: readonly BrushRenderPoint[],
+  closed: boolean
+): void {
   context.beginPath();
-  context.moveTo(stroke.points[0]!.x, stroke.points[0]!.y);
-  for (const point of stroke.points.slice(1)) context.lineTo(point.x, point.y);
-  if (stroke.closed === true) context.closePath();
+  context.moveTo(points[0]!.x, points[0]!.y);
+  for (const point of points.slice(1)) context.lineTo(point.x, point.y);
+  if (closed) context.closePath();
 }
 
-function drawConstantOutline(context: CanvasContext, stroke: StrokeCommand, color: string): void {
+function drawConstantOutline(
+  context: CanvasContext,
+  points: readonly BrushRenderPoint[],
+  closed: boolean,
+  width: number,
+  color: string
+): void {
   context.lineCap = "round";
   context.lineJoin = "round";
   context.strokeStyle = color;
-  context.lineWidth = stroke.width;
-  traceStrokePath(context, stroke);
+  context.lineWidth = width;
+  traceStrokePath(context, points, closed);
   context.stroke();
 }
 
@@ -52,12 +51,16 @@ interface SampledPoint {
   distance: number;
 }
 
-function sampledStrokePoints(stroke: StrokeCommand): SampledPoint[] {
-  const source = [...stroke.points];
+function sampledStrokePoints(
+  points: readonly BrushRenderPoint[],
+  closed: boolean,
+  width: number
+): SampledPoint[] {
+  const source = [...points];
   const first = source[0];
   const last = source.at(-1);
   if (
-    stroke.closed === true &&
+    closed &&
     first !== undefined &&
     last !== undefined &&
     (first.x !== last.x || first.y !== last.y)
@@ -72,7 +75,7 @@ function sampledStrokePoints(stroke: StrokeCommand): SampledPoint[] {
     const end = source[index]!;
     const length = Math.hypot(end.x - start.x, end.y - start.y);
     if (length === 0) continue;
-    const steps = Math.min(32, Math.max(1, Math.ceil(length / Math.max(8, stroke.width))));
+    const steps = Math.min(32, Math.max(1, Math.ceil(length / Math.max(8, width))));
     for (let step = 1; step <= steps; step += 1) {
       const amount = step / steps;
       sampled.push({
@@ -88,18 +91,21 @@ function sampledStrokePoints(stroke: StrokeCommand): SampledPoint[] {
 
 function drawVariableOutline(
   context: CanvasContext,
-  stroke: StrokeCommand,
+  points: readonly BrushRenderPoint[],
+  closed: boolean,
+  width: number,
   color: string,
   profile: StrokeWidthProfile
 ): void {
-  const sampled = sampledStrokePoints(stroke);
+  const sampled = sampledStrokePoints(points, closed, width);
   const totalDistance = sampled.at(-1)?.distance ?? 0;
   if (sampled.length < 2 || totalDistance <= 0) return;
   context.fillStyle = color;
   const widths = sampled.map(
-    (point) => stroke.width * strokeWidthScaleAt(profile, point.distance / totalDistance)
+    (point) => width * strokeWidthScaleAt(profile, point.distance / totalDistance)
   );
 
+  context.beginPath();
   for (let index = 1; index < sampled.length; index += 1) {
     const start = sampled[index - 1]!;
     const end = sampled[index]!;
@@ -111,20 +117,18 @@ function drawVariableOutline(
     const normalY = dx / length;
     const startRadius = widths[index - 1]! / 2;
     const endRadius = widths[index]! / 2;
-    context.beginPath();
     context.moveTo(start.x + normalX * startRadius, start.y + normalY * startRadius);
     context.lineTo(end.x + normalX * endRadius, end.y + normalY * endRadius);
     context.lineTo(end.x - normalX * endRadius, end.y - normalY * endRadius);
     context.lineTo(start.x - normalX * startRadius, start.y - normalY * startRadius);
     context.closePath();
-    context.fill();
   }
 
   sampled.forEach((point, index) => {
-    context.beginPath();
-    context.arc(point.x, point.y, widths[index]! / 2, 0, Math.PI * 2);
-    context.fill();
+    context.moveTo(point.x + widths[index]! / 2, point.y);
+    context.arc(point.x, point.y, widths[index]! / 2, 0, Math.PI * 2, true);
   });
+  context.fill();
 }
 
 export function drawStroke(context: CanvasContext, stroke: StrokeCommand): void {
@@ -132,16 +136,23 @@ export function drawStroke(context: CanvasContext, stroke: StrokeCommand): void 
   context.save();
   const color = stroke.tool === "eraser" ? PAPER_COLOR : stroke.color;
   if (stroke.fillColor !== undefined) {
-    traceStrokePath(context, stroke);
+    traceStrokePath(context, stroke.points, stroke.closed === true);
     context.fillStyle = stroke.tool === "eraser" ? PAPER_COLOR : stroke.fillColor;
     context.fill();
   }
-  const profile =
-    stroke.widthProfile ??
-    (stroke.tool === "eraser" ? CONSTANT_STROKE_WIDTH_PROFILE : DEFAULT_STROKE_WIDTH_PROFILE);
+  const profile = strokeWidthProfileForRender(stroke);
   const constant = profile.startScale === 1 && profile.peakScale === 1 && profile.endScale === 1;
-  if (constant) drawConstantOutline(context, stroke, color);
-  else drawVariableOutline(context, stroke, color, profile);
+  for (const layer of brushLayersForStroke(stroke)) {
+    context.save();
+    context.globalAlpha = layer.opacity;
+    const width = stroke.width * layer.widthScale;
+    if (constant) {
+      drawConstantOutline(context, layer.points, stroke.closed === true, width, color);
+    } else {
+      drawVariableOutline(context, layer.points, stroke.closed === true, width, color, profile);
+    }
+    context.restore();
+  }
   context.restore();
 }
 

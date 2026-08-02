@@ -8,6 +8,12 @@
 
 [在浏览器中查看完整 8 棒 AI 接龙 · Open the complete eight-turn AI relay](https://drawguessai-preview.wujingit.workers.dev/?replay=5FPPFTC3.ySGKoHUPi39iesa0pr2uKA)
 
+## AI 绘画示例 / AI Drawing Samples
+
+| 消防车 / Fire engine                               | 困惑 / Confusion                                   |
+| -------------------------------------------------- | -------------------------------------------------- |
+| ![AI 绘制的消防车](docs/assets/ai-fire-engine.png) | ![AI 绘制的困惑表情](docs/assets/ai-confusion.png) |
+
 ## 简体中文
 
 DrawGuessAI 是一个开放源码的 AI 画猜接龙游戏。人类与受限 AI 画手共享同一套画板规则，可以旁观纯 AI 接龙，也可以和朋友通过邀请房间参与盲接龙。
@@ -25,11 +31,11 @@ Web 界面默认运行于 `http://localhost:5173`，Cloudflare Worker 默认运�
 
 ### 自定义题目
 
-创建房间后点击“开始接龙”，在弹窗中直接输入自定义题目，或选择“精选随机”和“AI 临时出题”。自定义题目可标注语言、类型（单词、词语、成语、谚语、诗句或歇后语）和可选题材。盲接龙中选择自定义题目后，房主会自动退出接龙时间线，作为不参赛的出题者和观察者；游戏中可用“解除剧透锁”查看谜面和每一阶段的猜词。
+创建房间后点击“开始接龙”，在弹窗中直接输入自定义题目，或选择“精选随机”和“AI 临时出题”。题目应是词条、紧凑词组或惯用语；中文房间还允许常见古诗句。自定义题目可标注语言、类型和可选题材。盲接龙中选择自定义题目后，房主会自动退出接龙时间线，作为不参赛的出题者和观察者；游戏中可用“解除剧透锁”查看谜面和每一阶段的猜词。
 
 ### 当前范围
 
-0.2 版包含邀请房间、房间内再来一局、AI 剧场、盲接龙、确定性事件回放、带 WebSocket 回退的 WebRTC 预览、本地或允许列表内的服务端 AI、赛后圆桌互动，以及可分页浏览的公开最近对局存档。新存档沿用回放保留期；至少三个独立匿名投票者点赞后才进入有容量上限的长期保留池。固定房间 `MACH8888` 会在每个整点自动进行一局真实 AI 接龙并仅允许观察者加入；八个 AI 使用与普通房间相同的随机名称池，名称在房间生命周期内保持稳定。失败后会在同一小时内每两分钟重试，最多三次，然后等待下一整点。归档采用持久化 outbox 重试，不会因下一局启动而丢失。项目暂不提供账号、公开匹配、持久排行榜、文字或语音聊天，以及严格反作弊系统。
+0.3 版在邀请房间、AI 剧场、盲接龙和确定性回放之上，加入墨水、铅笔、马克笔和颜料四种人类与 AI 共用笔刷，以及二次曲线、平滑样条和三点圆弧等安全绘图工具。AI 回放会显示随笔触移动的工具光标；十二种内置人设分别影响构图、笔触和圆桌发言。赛后圆桌支持自然回复关系并限制冗长发言，揭晓顶栏在滚动时保持可用。精选词库现有 555 条记录、15 个分类，并按语言限制题型。固定观察房 `MACH8888` 仍会在每个整点进行真实 AI 接龙，归档采用持久化 outbox 和有容量上限的长期保留池。项目暂不提供账号、公开匹配、持久排行榜、文字或语音聊天，以及严格反作弊系统。
 
 ### 常用命令
 
@@ -59,10 +65,10 @@ The web app runs at `http://localhost:5173` and the Cloudflare Worker at `http:/
 
 ### Custom prompts
 
-Click **Start relay** in the lobby, then enter a custom prompt or choose **Curated random** or **AI generated** in the dialog. A custom prompt can include its language, kind, and optional subject tag. In blind relay, the host is automatically removed from the timeline and becomes the non-playing prompt setter/observer; **Unlock spoilers** reveals the original prompt and each submitted guess.
+Click **Start relay** in the lobby, then enter a custom prompt or choose **Curated random** or **AI generated** in the dialog. Prompts must be lexical entries, compact phrases, or established sayings; Chinese rooms may also use familiar classical poem lines. A custom prompt can include its language, kind, and optional subject tag. In blind relay, the host is automatically removed from the timeline and becomes the non-playing prompt setter/observer; **Unlock spoilers** reveals the original prompt and each submitted guess.
 
 See [`docs/architecture.md`](docs/architecture.md), [`docs/privacy.md`](docs/privacy.md), and [`docs/ai-profiles.md`](docs/ai-profiles.md) for architecture, privacy, and endpoint setup. DrawGuessAI is licensed under AGPL-3.0; bundled dependency notices are in [`THIRD_PARTY_NOTICES.txt`](apps/web/public/THIRD_PARTY_NOTICES.txt). The project is not affiliated with or endorsed by the developers or publishers of Draw & Guess.
 
 ### Current scope
 
-Version 0.2 includes invite rooms, in-room rematches, AI theatre, blind relay, deterministic event replay, WebRTC previews with WebSocket fallback, local or allow-listed server AI profiles, post-game table reactions, and a paginated public recent-match archive. New records follow the replay retention period; three independent anonymous voters are required before a replay enters a bounded long-term pool. The spectator-only room `MACH8888` runs a real server-AI relay at each hour boundary. Its eight AI seats use the normal-room randomized name pool and keep those identities for the room lifetime. Failed runs retry every two minutes up to three attempts in that hour, then wait for the next boundary. A durable archive outbox preserves completed matches across retries and room restarts. It intentionally has no accounts, public matchmaking, persistent rankings, text/voice chat, or strict anti-cheat system.
+Version 0.3 adds four deterministic brushes shared by people and AI, expressive quadratic/spline/three-point-arc tools, and a brush-aware playback cursor. Twelve built-in personas now shape composition and mark-making as well as concise, responsive roundtable voices. The reveal toolbar stays available while scrolling, and the locale-aware 555-entry prompt bank rejects improvised prose while retaining familiar classical poem lines for Chinese games. The spectator-only room `MACH8888`, durable archive outbox, bounded long-term replay pool, invite rooms, blind relay, WebRTC previews with WebSocket fallback, and public recent-match archive remain available. DrawGuessAI intentionally has no accounts, public matchmaking, persistent rankings, text/voice chat, or strict anti-cheat system.

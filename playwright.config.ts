@@ -6,6 +6,8 @@ const workerStateDirectory = `../../test-results/wrangler-state-${Date.now()}`;
 export default defineConfig({
   testDir: "./apps/web/tests/e2e",
   fullyParallel: false,
+  // Every project shares one stateful Wrangler process and must not race it across browsers.
+  workers: 1,
   timeout: 90_000,
   retries: 1,
   reporter: [["list"], ["html", { open: "never" }]],

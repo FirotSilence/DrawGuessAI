@@ -40,7 +40,7 @@
     "crons": ["0 * * * *"]
   },
   "vars": {
-    "APP_VERSION": "0.2.1",
+    "APP_VERSION": "0.3.0",
     "APP_ORIGIN": "",
     "ROOM_IDLE_SECONDS": "7200"
   },
@@ -113,7 +113,7 @@
         }
       ],
       "vars": {
-        "APP_VERSION": "0.2.1",
+        "APP_VERSION": "0.3.0",
         "APP_ORIGIN": "",
         "ROOM_IDLE_SECONDS": "7200"
       }

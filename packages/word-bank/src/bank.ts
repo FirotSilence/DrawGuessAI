@@ -2,6 +2,7 @@ import type { PromptTopic } from "@drawguessai/game-core";
 
 import {
   PromptEntrySchema,
+  type PlayablePromptKind,
   type PromptCategory,
   type PromptDifficulty,
   type PromptEntry
@@ -15,6 +16,7 @@ interface Phrase {
 
 interface PromptGroup {
   category: PromptCategory;
+  kind: PlayablePromptKind;
   topic: PromptTopic;
   items: readonly Phrase[];
   cultureTags?: readonly string[];
@@ -23,6 +25,7 @@ interface PromptGroup {
 const GROUPS: readonly PromptGroup[] = [
   {
     category: "objects",
+    kind: "word",
     topic: "daily-object",
     items: [
       { zh: "雨伞", en: "umbrella" },
@@ -64,6 +67,7 @@ const GROUPS: readonly PromptGroup[] = [
   },
   {
     category: "animals",
+    kind: "word",
     topic: "animal",
     items: [
       { zh: "猫", en: "cat" },
@@ -105,6 +109,7 @@ const GROUPS: readonly PromptGroup[] = [
   },
   {
     category: "actions",
+    kind: "phrase",
     topic: "action",
     items: [
       { zh: "刷牙", en: "brushing teeth" },
@@ -146,6 +151,7 @@ const GROUPS: readonly PromptGroup[] = [
   },
   {
     category: "daily-scenes",
+    kind: "phrase",
     topic: "daily-life",
     items: [
       { zh: "等公交", en: "waiting for the bus" },
@@ -167,26 +173,27 @@ const GROUPS: readonly PromptGroup[] = [
       { zh: "家庭合影", en: "family photo" },
       { zh: "公园野餐", en: "picnic in the park" },
       { zh: "海边散步", en: "walking by the sea" },
-      { zh: "遛狗遇见猫", en: "dog meeting a cat" },
-      { zh: "抢最后一块蛋糕", en: "reaching for the last cake" },
+      { zh: "猫狗相遇", en: "cat and dog meeting" },
+      { zh: "争抢蛋糕", en: "fighting over cake" },
       { zh: "电梯满员", en: "crowded elevator" },
-      { zh: "错过闹钟", en: "sleeping through the alarm" },
-      { zh: "找不到眼镜", en: "looking for glasses" },
-      { zh: "咖啡洒了", en: "spilled coffee" },
+      { zh: "睡过头", en: "oversleeping" },
+      { zh: "寻找眼镜", en: "looking for glasses" },
+      { zh: "打翻咖啡", en: "spilling coffee" },
       { zh: "排队结账", en: "waiting at checkout" },
-      { zh: "雨伞被风吹走", en: "umbrella blown away" },
-      { zh: "做饭烧糊了", en: "burnt dinner" },
+      { zh: "风中雨伞", en: "windblown umbrella" },
+      { zh: "烧糊饭菜", en: "burnt meal" },
       { zh: "水管漏水", en: "leaking pipe" },
       { zh: "熬夜加班", en: "working late" },
       { zh: "周末赖床", en: "sleeping in on weekends" },
       { zh: "邻居敲门", en: "neighbor at the door" },
-      { zh: "快递送到", en: "package delivery" },
+      { zh: "收快递", en: "receiving a package" },
       { zh: "拍毕业照", en: "graduation photo" },
       { zh: "机场接人", en: "meeting someone at the airport" }
     ]
   },
   {
     category: "people-at-work",
+    kind: "phrase",
     topic: "person",
     items: [
       { zh: "老师上课", en: "teacher giving a lesson" },
@@ -228,6 +235,7 @@ const GROUPS: readonly PromptGroup[] = [
   },
   {
     category: "nature-weather",
+    kind: "phrase",
     topic: "nature",
     items: [
       { zh: "太阳升起", en: "sunrise" },
@@ -258,7 +266,7 @@ const GROUPS: readonly PromptGroup[] = [
       { zh: "蜘蛛结网", en: "spider spinning a web" },
       { zh: "鸟儿筑巢", en: "bird building a nest" },
       { zh: "鱼儿跃出水面", en: "fish jumping out of water" },
-      { zh: "树被风吹弯", en: "tree bending in the wind", topic: "weather" },
+      { zh: "风中弯树", en: "wind-bent tree", topic: "weather" },
       { zh: "闪电劈树", en: "lightning striking a tree", topic: "weather" },
       { zh: "雨滴打窗", en: "rain on a window", topic: "weather" },
       { zh: "雾中灯塔", en: "lighthouse in fog", topic: "weather" },
@@ -269,6 +277,7 @@ const GROUPS: readonly PromptGroup[] = [
   },
   {
     category: "sports",
+    kind: "phrase",
     topic: "sport",
     items: [
       { zh: "踢足球", en: "playing soccer" },
@@ -310,6 +319,7 @@ const GROUPS: readonly PromptGroup[] = [
   },
   {
     category: "food-scenes",
+    kind: "phrase",
     topic: "food",
     items: [
       { zh: "吃火锅", en: "eating hot pot" },
@@ -325,13 +335,13 @@ const GROUPS: readonly PromptGroup[] = [
       { zh: "煎鸡蛋", en: "frying an egg" },
       { zh: "烤面包", en: "making toast" },
       { zh: "吹生日蜡烛", en: "blowing birthday candles" },
-      { zh: "抢最后一片披萨", en: "last slice of pizza" },
-      { zh: "辣到流泪", en: "crying from spicy food" },
-      { zh: "面条太长", en: "very long noodles" },
-      { zh: "爆米花溢出", en: "overflowing popcorn" },
-      { zh: "饼干掉进牛奶", en: "cookie in milk" },
+      { zh: "争抢披萨", en: "fighting over pizza" },
+      { zh: "吃辣流泪", en: "crying from spicy food" },
+      { zh: "超长面条", en: "extra-long noodles" },
+      { zh: "爆米花喷锅", en: "overflowing popcorn" },
+      { zh: "牛奶泡饼干", en: "cookies in milk" },
       { zh: "早餐煎糊", en: "burnt breakfast" },
-      { zh: "餐桌上的大餐", en: "feast on a table" },
+      { zh: "餐桌盛宴", en: "table feast" },
       { zh: "野餐篮", en: "picnic basket" },
       { zh: "水果拼盘", en: "fruit platter", topic: "fruit" },
       { zh: "糖葫芦", en: "candied hawthorn", topic: "fruit" },
@@ -344,13 +354,14 @@ const GROUPS: readonly PromptGroup[] = [
       { zh: "咖啡拉花", en: "latte art" },
       { zh: "棉花糖", en: "cotton candy" },
       { zh: "巧克力喷泉", en: "chocolate fountain" },
-      { zh: "火锅太辣", en: "spicy hot pot" },
+      { zh: "麻辣火锅", en: "spicy hot pot" },
       { zh: "饺子露馅", en: "broken dumpling" },
       { zh: "偷吃夜宵", en: "sneaking a midnight snack" }
     ]
   },
   {
     category: "transport-travel",
+    kind: "phrase",
     topic: "transport",
     items: [
       { zh: "飞机起飞", en: "airplane taking off" },
@@ -370,28 +381,29 @@ const GROUPS: readonly PromptGroup[] = [
       { zh: "收拾行李", en: "packing luggage", topic: "travel" },
       { zh: "机场安检", en: "airport security", topic: "travel" },
       { zh: "领取行李", en: "collecting luggage", topic: "travel" },
-      { zh: "城市迷路", en: "lost in a city", topic: "travel" },
+      { zh: "街头迷路", en: "lost in a city", topic: "travel" },
       { zh: "看地图", en: "reading a map", topic: "travel" },
       { zh: "问路", en: "asking for directions", topic: "travel" },
       { zh: "公路旅行", en: "road trip", topic: "travel" },
       { zh: "露营", en: "camping", topic: "travel" },
       { zh: "搭帐篷", en: "pitching a tent", topic: "travel" },
-      { zh: "登山看日出", en: "hiking for sunrise", topic: "travel" },
+      { zh: "山顶日出", en: "mountaintop sunrise", topic: "travel" },
       { zh: "海边度假", en: "beach vacation", topic: "travel" },
       { zh: "乘热气球", en: "hot air balloon ride", topic: "travel" },
       { zh: "坐过山车", en: "riding a roller coaster", topic: "travel" },
       { zh: "摩托车比赛", en: "motorcycle race" },
-      { zh: "堵在隧道", en: "traffic in a tunnel" },
+      { zh: "隧道堵车", en: "tunnel traffic" },
       { zh: "校车接学生", en: "school bus pickup" },
-      { zh: "救护车让行", en: "making way for an ambulance" },
+      { zh: "避让救护车", en: "yielding to an ambulance" },
       { zh: "消防车出动", en: "fire engine responding" },
       { zh: "拖车拉汽车", en: "tow truck hauling a car" },
-      { zh: "船上晕船", en: "seasick on a boat", topic: "travel" },
+      { zh: "晕船", en: "seasickness", topic: "travel" },
       { zh: "车站告别", en: "farewell at the station", topic: "travel" }
     ]
   },
   {
     category: "festivals-culture",
+    kind: "phrase",
     topic: "festival",
     cultureTags: ["Chinese", "international"],
     items: [
@@ -434,6 +446,7 @@ const GROUPS: readonly PromptGroup[] = [
   },
   {
     category: "idioms",
+    kind: "idiom",
     topic: "wisdom",
     cultureTags: ["Chinese", "idiom"],
     items: [
@@ -491,6 +504,7 @@ const GROUPS: readonly PromptGroup[] = [
   },
   {
     category: "proverbs",
+    kind: "proverb",
     topic: "wisdom",
     cultureTags: ["Chinese", "proverb"],
     items: [
@@ -547,7 +561,50 @@ const GROUPS: readonly PromptGroup[] = [
     ]
   },
   {
+    category: "places",
+    kind: "phrase",
+    topic: "daily-life",
+    items: [
+      { zh: "操场", en: "playground", topic: "learning" },
+      { zh: "图书馆", en: "library", topic: "learning" },
+      { zh: "教室", en: "classroom", topic: "learning" },
+      { zh: "医院", en: "hospital", topic: "person" },
+      { zh: "面包店", en: "bakery", topic: "food" },
+      { zh: "博物馆", en: "museum", topic: "culture" },
+      { zh: "水族馆", en: "aquarium", topic: "animal" },
+      { zh: "动物园", en: "zoo", topic: "animal" },
+      { zh: "农场", en: "farm", topic: "nature" },
+      { zh: "灯塔", en: "lighthouse", topic: "travel" },
+      { zh: "城堡", en: "castle", topic: "history" },
+      { zh: "空间站", en: "space station", topic: "travel" },
+      { zh: "火车站", en: "train station", topic: "transport" },
+      { zh: "机场", en: "airport", topic: "travel" },
+      { zh: "露营地", en: "campsite", topic: "travel" },
+      { zh: "海滩", en: "beach", topic: "nature" },
+      { zh: "沙漠", en: "desert", topic: "nature" },
+      { zh: "森林", en: "forest", topic: "nature" },
+      { zh: "山洞", en: "cave", topic: "nature" },
+      { zh: "冰川", en: "glacier", topic: "nature" },
+      { zh: "珊瑚礁", en: "coral reef", topic: "nature" },
+      { zh: "游乐园", en: "amusement park" },
+      { zh: "电影院", en: "movie theater", topic: "culture" },
+      { zh: "咖啡馆", en: "cafe", topic: "food" },
+      { zh: "菜市场", en: "produce market", topic: "food" },
+      { zh: "花店", en: "flower shop", topic: "nature" },
+      { zh: "理发店", en: "barbershop" },
+      { zh: "消防站", en: "fire station", topic: "person" },
+      { zh: "警察局", en: "police station", topic: "person" },
+      { zh: "体育馆", en: "stadium", topic: "sport" },
+      { zh: "码头", en: "pier", topic: "transport" },
+      { zh: "港口", en: "harbor", topic: "transport" },
+      { zh: "竹林", en: "bamboo grove", topic: "nature" },
+      { zh: "麦田", en: "wheat field", topic: "nature" },
+      { zh: "果园", en: "orchard", topic: "fruit" }
+    ]
+  },
+  {
     category: "poem-lines",
+    kind: "poem-line",
     topic: "nature",
     cultureTags: ["Chinese", "classical-poetry"],
     items: [
@@ -594,6 +651,7 @@ const GROUPS: readonly PromptGroup[] = [
   },
   {
     category: "xiehouyu",
+    kind: "xiehouyu",
     topic: "wisdom",
     cultureTags: ["Chinese", "xiehouyu"],
     items: [
@@ -757,6 +815,7 @@ export const WORD_BANK: readonly PromptEntry[] = Object.freeze(
       id: `${group.category}-${String(itemIndex + 1).padStart(2, "0")}`,
       texts: { "zh-CN": phrase.zh, en: phrase.en },
       category: group.category,
+      kind: group.kind,
       topic: phrase.topic ?? group.topic,
       difficulty: difficultyFor(globalIndex),
       drawability:
@@ -771,7 +830,7 @@ export const WORD_BANK: readonly PromptEntry[] = Object.freeze(
       cultureTags: [...(group.cultureTags ?? [])],
       safety: "all-ages",
       source: "curated",
-      version: 4
+      version: 5
     })
   )
 );

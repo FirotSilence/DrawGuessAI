@@ -1,10 +1,11 @@
 import {
+  BRUSH_PRESETS,
   BRUSH_WIDTHS,
   CANVAS_HEIGHT,
   CANVAS_WIDTH,
   CanvasCommandSchema
 } from "@drawguessai/canvas-protocol";
-import { POST_GAME_REVIEW_TEXT_LIMIT } from "@drawguessai/game-core";
+import { POST_GAME_REVIEW_GENERATED_TEXT_LIMIT } from "@drawguessai/game-core";
 import { jsonrepair } from "jsonrepair";
 
 import { AiTurnResultSchema, type AiTurnResult } from "./schema";
@@ -93,6 +94,21 @@ function normalizeBrushWidth(value: unknown): unknown {
   );
 }
 
+function normalizeBrushPreset(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  const normalized = value.trim().toLowerCase().replace(/[ -]+/g, "_");
+  const aliases: Readonly<Record<string, string>> = {
+    brush: "paint",
+    calligraphy: "paint",
+    felt_tip: "marker",
+    highlighter: "marker",
+    ink_pen: "ink",
+    pen: "ink"
+  };
+  const preset = aliases[normalized] ?? normalized;
+  return BRUSH_PRESETS.includes(preset as (typeof BRUSH_PRESETS)[number]) ? preset : value;
+}
+
 function normalizeCoordinate(value: unknown, maximum: number): unknown {
   const normalized = normalizeNumber(value);
   return typeof normalized === "number" && Number.isFinite(normalized)
@@ -174,9 +190,11 @@ function normalizeDrawingPlan(value: unknown): unknown {
 function normalizeStyle(candidate: Record<string, unknown>, providerTool: unknown) {
   const widthProfile =
     candidate.widthProfile ?? candidate.strokeProfile ?? candidate.pressureProfile;
+  const brushPreset = candidate.brushPreset ?? candidate.brushStyle ?? candidate.brush;
   return {
     id: candidate.id,
     tool: providerTool === "eraser" ? "eraser" : "pen",
+    ...(brushPreset === undefined ? {} : { brushPreset: normalizeBrushPreset(brushPreset) }),
     color: typeof candidate.color === "string" ? candidate.color.toLowerCase() : "#202124",
     ...(typeof candidate.fillColor === "string"
       ? { fillColor: candidate.fillColor.toLowerCase() }
@@ -268,7 +286,10 @@ function normalizeProviderCommand(command: unknown): unknown {
     "circle",
     "ellipse",
     "arc",
+    "arcThrough",
     "curve",
+    "quadratic",
+    "spline",
     "path"
   ] as const;
   const shapeAlias =
@@ -284,27 +305,40 @@ function normalizeProviderCommand(command: unknown): unknown {
     Array.isArray(candidate.segments) && candidate.start !== undefined
       ? "path"
       : candidate.start !== undefined &&
-          candidate.control1 !== undefined &&
-          candidate.control2 !== undefined &&
+          candidate.through !== undefined &&
           candidate.end !== undefined
-        ? "curve"
-        : candidate.start !== undefined && candidate.end !== undefined
-          ? "line"
-          : candidate.radius !== undefined
-            ? "circle"
-            : candidate.rx !== undefined &&
-                candidate.ry !== undefined &&
-                candidate.startDeg !== undefined &&
-                candidate.endDeg !== undefined
-              ? "arc"
-              : candidate.rx !== undefined && candidate.ry !== undefined
-                ? "ellipse"
-                : Array.isArray(candidate.points)
-                  ? "stroke"
-                  : undefined;
+        ? "arcThrough"
+        : candidate.start !== undefined &&
+            candidate.control1 !== undefined &&
+            candidate.control2 !== undefined &&
+            candidate.end !== undefined
+          ? "curve"
+          : candidate.start !== undefined &&
+              candidate.control !== undefined &&
+              candidate.end !== undefined
+            ? "quadratic"
+            : candidate.start !== undefined && candidate.end !== undefined
+              ? "line"
+              : candidate.radius !== undefined
+                ? "circle"
+                : candidate.rx !== undefined &&
+                    candidate.ry !== undefined &&
+                    candidate.startDeg !== undefined &&
+                    candidate.endDeg !== undefined
+                  ? "arc"
+                  : candidate.rx !== undefined && candidate.ry !== undefined
+                    ? "ellipse"
+                    : Array.isArray(candidate.points)
+                      ? "stroke"
+                      : undefined;
   const rawProviderType =
     shapeAlias ?? (toolAsShape ? candidate.tool : candidate.type) ?? inferredType;
-  const providerType = rawProviderType === "rectangle" ? "rect" : rawProviderType;
+  const providerType =
+    rawProviderType === "rectangle"
+      ? "rect"
+      : rawProviderType === "arc-through" || rawProviderType === "arc_through"
+        ? "arcThrough"
+        : rawProviderType;
   const providerTool = toolAsShape ? candidate.tool2 : candidate.tool;
   const style = normalizeStyle(candidate, providerTool);
 
@@ -334,6 +368,20 @@ function normalizeProviderCommand(command: unknown): unknown {
         ? candidate.points.map(normalizePoint)
         : candidate.points,
       ...(providerType === "polygon" ? { fill: normalizeBoolean(candidate.fill ?? true) } : {})
+    };
+  }
+  if (providerType === "spline") {
+    return {
+      type: "spline",
+      ...style,
+      points: Array.isArray(candidate.points)
+        ? candidate.points.map(normalizePoint)
+        : candidate.points,
+      tension: normalizeNumber(candidate.tension ?? 0.35),
+      closed: normalizeBoolean(candidate.closed ?? false),
+      fill: normalizeBoolean(
+        candidate.fill ?? (candidate.fillColor !== undefined && candidate.closed === true)
+      )
     };
   }
   if (providerType === "rect") {
@@ -397,6 +445,24 @@ function normalizeProviderCommand(command: unknown): unknown {
       start: normalizePoint(candidate.start),
       control1: normalizePoint(candidate.control1),
       control2: normalizePoint(candidate.control2),
+      end: normalizePoint(candidate.end)
+    };
+  }
+  if (providerType === "quadratic") {
+    return {
+      type: "quadratic",
+      ...style,
+      start: normalizePoint(candidate.start),
+      control: normalizePoint(candidate.control ?? candidate.controlPoint),
+      end: normalizePoint(candidate.end)
+    };
+  }
+  if (providerType === "arcThrough") {
+    return {
+      type: "arcThrough",
+      ...style,
+      start: normalizePoint(candidate.start),
+      through: normalizePoint(candidate.through ?? candidate.mid ?? candidate.middle),
       end: normalizePoint(candidate.end)
     };
   }
@@ -505,7 +571,7 @@ function normalizeProviderResult(value: unknown): unknown {
       : {
           review: {
             ...normalizedReview.currentReview,
-            text: normalizeStringLimit(review.text, POST_GAME_REVIEW_TEXT_LIMIT),
+            text: normalizeStringLimit(review.text, POST_GAME_REVIEW_GENERATED_TEXT_LIMIT + 1),
             score: normalizeNumber(review.score),
             ...(normalizedReview.replyToActorId === undefined
               ? {}

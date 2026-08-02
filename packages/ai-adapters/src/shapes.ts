@@ -2,6 +2,7 @@ import {
   BRUSH_WIDTHS,
   CANVAS_HEIGHT,
   CANVAS_WIDTH,
+  BrushPresetSchema,
   FinishCommandSchema,
   StrokeCommandSchema,
   StrokeWidthProfileSchema,
@@ -34,6 +35,7 @@ export const AiTransformSchema = z
 const ShapeStyle = {
   id: z.string().min(1).max(80),
   tool: z.enum(["pen", "eraser"]).default("pen"),
+  brushPreset: BrushPresetSchema.optional(),
   color: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/)
@@ -149,6 +151,34 @@ export const AiShapeCommandSchema = z.discriminatedUnion("type", [
       start: ShapePointSchema,
       control1: ShapePointSchema,
       control2: ShapePointSchema,
+      end: ShapePointSchema
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("quadratic"),
+      ...ShapeStyle,
+      start: ShapePointSchema,
+      control: ShapePointSchema,
+      end: ShapePointSchema
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("spline"),
+      ...ShapeStyle,
+      points: z.array(ShapePointSchema).min(3).max(16),
+      tension: z.number().min(0).max(1).default(0.35),
+      closed: z.boolean().default(false),
+      fill: z.boolean().default(false)
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("arcThrough"),
+      ...ShapeStyle,
+      start: ShapePointSchema,
+      through: ShapePointSchema,
       end: ShapePointSchema
     })
     .strict(),
@@ -277,6 +307,115 @@ function sampleQuadratic(
   });
 }
 
+function sampleSpline(
+  points: readonly { x: number; y: number }[],
+  tension: number,
+  closed: boolean,
+  stepsPerSegment = 5
+): { x: number; y: number }[] {
+  const result: { x: number; y: number }[] = [];
+  const segmentCount = closed ? points.length : points.length - 1;
+  const tangentScale = (1 - tension) / 2;
+  const pointAt = (index: number) => {
+    if (closed) return points[(index + points.length) % points.length]!;
+    return points[Math.max(0, Math.min(points.length - 1, index))]!;
+  };
+  for (let segment = 0; segment < segmentCount; segment += 1) {
+    const p0 = pointAt(segment - 1);
+    const p1 = pointAt(segment);
+    const p2 = pointAt(segment + 1);
+    const p3 = pointAt(segment + 2);
+    for (let step = segment === 0 ? 0 : 1; step <= stepsPerSegment; step += 1) {
+      const t = step / stepsPerSegment;
+      const t2 = t * t;
+      const t3 = t2 * t;
+      const h00 = 2 * t3 - 3 * t2 + 1;
+      const h10 = t3 - 2 * t2 + t;
+      const h01 = -2 * t3 + 3 * t2;
+      const h11 = t3 - t2;
+      const tangent1 = {
+        x: (p2.x - p0.x) * tangentScale,
+        y: (p2.y - p0.y) * tangentScale
+      };
+      const tangent2 = {
+        x: (p3.x - p1.x) * tangentScale,
+        y: (p3.y - p1.y) * tangentScale
+      };
+      result.push({
+        x: h00 * p1.x + h10 * tangent1.x + h01 * p2.x + h11 * tangent2.x,
+        y: h00 * p1.y + h10 * tangent1.y + h01 * p2.y + h11 * tangent2.y
+      });
+    }
+  }
+  return result;
+}
+
+function sampleQuadraticThrough(
+  start: { x: number; y: number },
+  through: { x: number; y: number },
+  end: { x: number; y: number }
+): { x: number; y: number }[] {
+  return sampleQuadratic(
+    start,
+    {
+      x: 2 * through.x - (start.x + end.x) / 2,
+      y: 2 * through.y - (start.y + end.y) / 2
+    },
+    end,
+    21
+  );
+}
+
+function sampleArcThrough(
+  start: { x: number; y: number },
+  through: { x: number; y: number },
+  end: { x: number; y: number }
+): { x: number; y: number }[] {
+  const determinant =
+    2 *
+    (start.x * (through.y - end.y) + through.x * (end.y - start.y) + end.x * (start.y - through.y));
+  if (Math.abs(determinant) < 0.001) return sampleQuadraticThrough(start, through, end);
+  const startSquared = start.x ** 2 + start.y ** 2;
+  const throughSquared = through.x ** 2 + through.y ** 2;
+  const endSquared = end.x ** 2 + end.y ** 2;
+  const center = {
+    x:
+      (startSquared * (through.y - end.y) +
+        throughSquared * (end.y - start.y) +
+        endSquared * (start.y - through.y)) /
+      determinant,
+    y:
+      (startSquared * (end.x - through.x) +
+        throughSquared * (start.x - end.x) +
+        endSquared * (through.x - start.x)) /
+      determinant
+  };
+  const radius = Math.hypot(start.x - center.x, start.y - center.y);
+  if (!Number.isFinite(radius) || radius > 10_000) {
+    return sampleQuadraticThrough(start, through, end);
+  }
+  const tau = Math.PI * 2;
+  const normalizeSweep = (angle: number) => ((angle % tau) + tau) % tau;
+  const startAngle = Math.atan2(start.y - center.y, start.x - center.x);
+  const throughAngle = Math.atan2(through.y - center.y, through.x - center.x);
+  const endAngle = Math.atan2(end.y - center.y, end.x - center.x);
+  const positiveSweep = normalizeSweep(endAngle - startAngle);
+  const throughSweep = normalizeSweep(throughAngle - startAngle);
+  const sweep = throughSweep <= positiveSweep + 0.0001 ? positiveSweep : positiveSweep - tau;
+  if (Math.abs(sweep) < 0.0001) return sampleQuadraticThrough(start, through, end);
+  const steps = Math.max(12, Math.min(48, Math.ceil(Math.abs((sweep * 180) / Math.PI) / 10) + 1));
+  const sampled = Array.from({ length: steps }, (_, index) => {
+    const angle = startAngle + sweep * (index / (steps - 1));
+    return {
+      x: center.x + Math.cos(angle) * radius,
+      y: center.y + Math.sin(angle) * radius
+    };
+  });
+  const throughProgress = sweep > 0 ? throughSweep / sweep : (throughSweep - tau) / sweep;
+  sampled[Math.round(throughProgress * (steps - 1))] = { ...through };
+  return sampled;
+}
+
 function limitPoints(points: readonly Point[]): Point[] {
   if (points.length <= 96) return [...points];
   return Array.from(
@@ -341,6 +480,7 @@ function compileStroke(
     type: "stroke",
     id: command.id,
     tool: command.tool,
+    ...(command.brushPreset === undefined ? {} : { brushPreset: command.brushPreset }),
     color: command.color.toLowerCase(),
     ...(closed ? { closed: true } : {}),
     ...(filledColor(command, fill) === undefined ? {} : { fillColor: filledColor(command, fill)! }),
@@ -399,6 +539,20 @@ export function compileAiShapeCommand(command: AiShapeCommand): StrokeCommand {
       command,
       sampleCubic(command.start, command.control1, command.control2, command.end)
     );
+  }
+  if (command.type === "quadratic") {
+    return compileStroke(command, sampleQuadratic(command.start, command.control, command.end));
+  }
+  if (command.type === "spline") {
+    return compileStroke(
+      command,
+      sampleSpline(command.points, command.tension, command.closed || command.fill),
+      command.closed || command.fill,
+      command.fill
+    );
+  }
+  if (command.type === "arcThrough") {
+    return compileStroke(command, sampleArcThrough(command.start, command.through, command.end));
   }
   return compileStroke(command, pathPoints(command), command.closed, command.fill);
 }

@@ -101,4 +101,32 @@ describe("server canvas image", () => {
     }
     expect(hasInk).toBe(true);
   });
+
+  it("renders every brush preset deterministically with distinct texture", () => {
+    const render = (brushPreset: "ink" | "pencil" | "marker" | "paint") =>
+      commandsToServerAiImageDataUrl([
+        {
+          type: "stroke",
+          id: "expressive-stroke",
+          tool: "pen",
+          brushPreset,
+          color: "#3f7edb",
+          width: 28,
+          points: [
+            { x: 120, y: 540 },
+            { x: 350, y: 180 },
+            { x: 620, y: 570 },
+            { x: 880, y: 240 }
+          ],
+          offsetMs: 0
+        },
+        { type: "finish", id: "finish", offsetMs: 1 }
+      ]);
+
+    const rendered = ["ink", "pencil", "marker", "paint"].map((preset) =>
+      render(preset as "ink" | "pencil" | "marker" | "paint")
+    );
+    expect(new Set(rendered).size).toBe(4);
+    expect(render("pencil")).toBe(render("pencil"));
+  });
 });

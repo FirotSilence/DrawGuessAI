@@ -111,7 +111,7 @@ function defaultPersonaCustomization(
   return {
     name: persona.names[locale],
     description: persona.descriptions[locale],
-    turnPrompt: persona.instruction,
+    turnPrompt: `Drawing style: ${persona.drawingInstruction}\nLive reaction voice: ${persona.instruction}`,
     reviewPrompt: persona.reviewInstruction
   };
 }
@@ -263,7 +263,7 @@ function PromptStartDialog({
   const [promptKind, setPromptKind] = useState<PromptKind>("phrase");
   const [promptTopic, setPromptTopic] = useState<PromptTopic>("other");
   const normalizedText = text.trim();
-  const customIsValid = validatePlayablePromptText(normalizedText).ok;
+  const customIsValid = validatePlayablePromptText(normalizedText, promptKind, promptLanguage).ok;
   const metadata = createPromptMetadata(normalizedText, promptLanguage, promptKind, promptTopic);
 
   return (
@@ -310,7 +310,13 @@ function PromptStartDialog({
                 <span>{t("promptLanguage")}</span>
                 <select
                   value={promptLanguage}
-                  onChange={(event) => setPromptLanguage(event.target.value as GameLocale)}
+                  onChange={(event) => {
+                    const nextLanguage = event.target.value as GameLocale;
+                    setPromptLanguage(nextLanguage);
+                    if (nextLanguage === "en" && promptKind === "poem-line") {
+                      setPromptKind("phrase");
+                    }
+                  }}
                 >
                   <option value="zh-CN">{t("promptLanguageChinese")}</option>
                   <option value="en">{t("promptLanguageEnglish")}</option>
@@ -326,7 +332,9 @@ function PromptStartDialog({
                   <option value="phrase">{t("promptKindPhrase")}</option>
                   <option value="idiom">{t("promptKindIdiom")}</option>
                   <option value="proverb">{t("promptKindProverb")}</option>
-                  <option value="poem-line">{t("promptKindPoemLine")}</option>
+                  {promptLanguage === "zh-CN" && (
+                    <option value="poem-line">{t("promptKindPoemLine")}</option>
+                  )}
                   <option value="xiehouyu">{t("promptKindXiehouyu")}</option>
                 </select>
               </label>

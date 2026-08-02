@@ -40,4 +40,4 @@ README 中的精选回放是一个明确选取、随发布资源一同分发的�
 
 ## Non-goals / 非目标
 
-Version 0.2 does not promise strict anti-cheat protection, anonymity from other WebRTC peers, encrypted replay content beyond TLS, provider privacy, or protection from a compromised browser/deployment.
+Version 0.3 does not promise strict anti-cheat protection, anonymity from other WebRTC peers, encrypted replay content beyond TLS, provider privacy, or protection from a compromised browser/deployment.

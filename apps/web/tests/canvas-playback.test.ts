@@ -7,7 +7,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   commandPlaybackWeight,
+  canvasPlaybackFrameAtProgress,
   commandsAtPlaybackProgress,
+  liveCanvasPlaybackCursor,
   playbackProgressForRender,
   strokeAtPlaybackProgress
 } from "../src/lib/canvas-playback";
@@ -85,6 +87,53 @@ describe("AI canvas playback", () => {
     expect(
       third?.points.every((point) => Number.isInteger(point.x) && Number.isInteger(point.y))
     ).toBe(true);
+  });
+
+  it("returns a brush-aware cursor at the interpolated stroke tip", () => {
+    const line = stroke("cursor-line");
+    line.brushPreset = "pencil";
+    line.points = [
+      { x: 100, y: 100 },
+      { x: 900, y: 500 }
+    ];
+    const frame = canvasPlaybackFrameAtProgress(
+      [line, { type: "finish", id: "finish", offsetMs: 1 }],
+      0.5
+    );
+
+    expect(frame.commands).toHaveLength(1);
+    expect(frame.cursor).toMatchObject({
+      point: { x: 500, y: 300 },
+      brushPreset: "pencil",
+      tool: "pen",
+      width: 8
+    });
+    expect(frame.cursor?.angleDeg).toBeCloseTo(26.565, 2);
+    expect(
+      canvasPlaybackFrameAtProgress([line, { type: "finish", id: "finish", offsetMs: 1 }], 1).cursor
+    ).toBeUndefined();
+  });
+
+  it("keeps the cursor on the newest partial stroke during live AI preview", () => {
+    const first = stroke("first");
+    const partial = stroke("partial");
+    partial.brushPreset = "paint";
+    partial.points = [
+      { x: 200, y: 300 },
+      { x: 260, y: 240 },
+      { x: 340, y: 220 }
+    ];
+
+    expect(liveCanvasPlaybackCursor([first, partial])).toMatchObject({
+      point: { x: 340, y: 220 },
+      brushPreset: "paint"
+    });
+    expect(
+      liveCanvasPlaybackCursor([
+        first,
+        { type: "fill", id: "fill", point: { x: 500, y: 500 }, color: "#e94f64", offsetMs: 0 }
+      ])
+    ).toBeUndefined();
   });
 
   it("starts a newly submitted drawing blank before the browser can paint the completed frame", () => {

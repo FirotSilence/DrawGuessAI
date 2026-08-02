@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  BRUSH_PRESETS,
   BRUSH_WIDTHS,
   CANVAS_HEIGHT,
   CANVAS_WIDTH,
@@ -24,11 +25,14 @@ export const StrokeWidthProfileSchema = z
   })
   .strict();
 
+export const BrushPresetSchema = z.enum(BRUSH_PRESETS);
+
 export const StrokeCommandSchema = z
   .object({
     type: z.literal("stroke"),
     id: z.string().min(1).max(80),
     tool: z.enum(["pen", "eraser"]),
+    brushPreset: BrushPresetSchema.optional(),
     color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
     fillColor: z
       .string()
@@ -91,6 +95,7 @@ export const CanvasBudgetSchema = z
   .strict();
 
 export type Point = z.infer<typeof PointSchema>;
+export type BrushPreset = z.infer<typeof BrushPresetSchema>;
 export type StrokeWidthProfile = z.infer<typeof StrokeWidthProfileSchema>;
 export type StrokeCommand = z.infer<typeof StrokeCommandSchema>;
 export type FillCommand = z.infer<typeof FillCommandSchema>;

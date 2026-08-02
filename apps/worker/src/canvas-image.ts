@@ -1,14 +1,14 @@
 import {
   CANVAS_HEIGHT,
   CANVAS_WIDTH,
-  CONSTANT_STROKE_WIDTH_PROFILE,
-  DEFAULT_STROKE_WIDTH_PROFILE,
   PAPER_COLOR,
   activeCanvasMarkCommands,
+  brushLayersForStroke,
+  strokeWidthProfileForRender,
+  strokeWidthScaleAt,
   type CanvasCommand,
   type Point,
-  type StrokeCommand,
-  type StrokeWidthProfile
+  type StrokeCommand
 } from "@drawguessai/canvas-protocol";
 
 export const SERVER_AI_IMAGE_SIZE = { width: 480, height: 360 } as const;
@@ -20,6 +20,8 @@ interface Rgb {
 }
 
 interface Raster {
+  coverage: Uint32Array;
+  coverageGeneration: number;
   pixels: Uint8Array;
   width: number;
   height: number;
@@ -42,21 +44,6 @@ function parseHexColor(color: string): Rgb {
   };
 }
 
-function smoothStep(value: number): number {
-  const clamped = Math.max(0, Math.min(1, value));
-  return clamped * clamped * (3 - 2 * clamped);
-}
-
-function widthScaleAt(profile: StrokeWidthProfile, progress: number): number {
-  const clamped = Math.max(0, Math.min(1, progress));
-  if (clamped <= profile.peakAt) {
-    const amount = smoothStep(clamped / profile.peakAt);
-    return profile.startScale + (profile.peakScale - profile.startScale) * amount;
-  }
-  const amount = smoothStep((clamped - profile.peakAt) / (1 - profile.peakAt));
-  return profile.peakScale + (profile.endScale - profile.peakScale) * amount;
-}
-
 function createRaster(): Raster {
   const { width, height } = SERVER_AI_IMAGE_SIZE;
   const pixels = new Uint8Array(width * height * 4);
@@ -66,19 +53,52 @@ function createRaster(): Raster {
     pixels[index + 2] = PAPER_RGB.blue;
     pixels[index + 3] = 255;
   }
-  return { pixels, width, height };
+  return {
+    coverage: new Uint32Array(width * height),
+    coverageGeneration: 0,
+    pixels,
+    width,
+    height
+  };
 }
 
-function setPixel(raster: Raster, x: number, y: number, color: Rgb): void {
+function nextCoverageGeneration(raster: Raster): number {
+  raster.coverageGeneration += 1;
+  if (raster.coverageGeneration > 0xffffffff) {
+    raster.coverage.fill(0);
+    raster.coverageGeneration = 1;
+  }
+  return raster.coverageGeneration;
+}
+
+function setPixel(
+  raster: Raster,
+  x: number,
+  y: number,
+  color: Rgb,
+  opacity = 1,
+  coverageGeneration = 0
+): void {
   if (x < 0 || y < 0 || x >= raster.width || y >= raster.height) return;
+  const pixelIndex = y * raster.width + x;
+  if (coverageGeneration > 0) {
+    if (raster.coverage[pixelIndex] === coverageGeneration) return;
+    raster.coverage[pixelIndex] = coverageGeneration;
+  }
   const offset = (y * raster.width + x) * 4;
-  raster.pixels[offset] = color.red;
-  raster.pixels[offset + 1] = color.green;
-  raster.pixels[offset + 2] = color.blue;
+  raster.pixels[offset] = Math.round(
+    raster.pixels[offset]! + (color.red - raster.pixels[offset]!) * opacity
+  );
+  raster.pixels[offset + 1] = Math.round(
+    raster.pixels[offset + 1]! + (color.green - raster.pixels[offset + 1]!) * opacity
+  );
+  raster.pixels[offset + 2] = Math.round(
+    raster.pixels[offset + 2]! + (color.blue - raster.pixels[offset + 2]!) * opacity
+  );
   raster.pixels[offset + 3] = 255;
 }
 
-function scalePoint(point: Point): ScaledPoint {
+function scalePoint(point: { x: number; y: number }): ScaledPoint {
   return { x: point.x * SCALE_X, y: point.y * SCALE_Y };
 }
 
@@ -87,7 +107,9 @@ function drawDisk(
   centerX: number,
   centerY: number,
   radius: number,
-  color: Rgb
+  color: Rgb,
+  opacity = 1,
+  coverageGeneration = 0
 ): void {
   const minX = Math.max(0, Math.floor(centerX - radius));
   const maxX = Math.min(raster.width - 1, Math.ceil(centerX + radius));
@@ -98,7 +120,9 @@ function drawDisk(
     const dy = y + 0.5 - centerY;
     for (let x = minX; x <= maxX; x += 1) {
       const dx = x + 0.5 - centerX;
-      if (dx * dx + dy * dy <= radiusSquared) setPixel(raster, x, y, color);
+      if (dx * dx + dy * dy <= radiusSquared) {
+        setPixel(raster, x, y, color, opacity, coverageGeneration);
+      }
     }
   }
 }
@@ -127,54 +151,68 @@ function fillPolygon(raster: Raster, points: readonly ScaledPoint[], color: Rgb)
 }
 
 function drawStroke(raster: Raster, stroke: StrokeCommand): void {
-  const scaledPoints = stroke.points.map(scalePoint);
   const strokeColor = stroke.tool === "eraser" ? PAPER_RGB : parseHexColor(stroke.color);
   if (stroke.fillColor !== undefined) {
     fillPolygon(
       raster,
-      scaledPoints,
+      stroke.points.map(scalePoint),
       stroke.tool === "eraser" ? PAPER_RGB : parseHexColor(stroke.fillColor)
     );
   }
-  const distances = [0];
-  for (let index = 1; index < scaledPoints.length; index += 1) {
-    const start = scaledPoints[index - 1]!;
-    const end = scaledPoints[index]!;
-    distances.push(distances[index - 1]! + Math.hypot(end.x - start.x, end.y - start.y));
-  }
-  const totalLength = distances.at(-1) ?? 0;
-  const profile =
-    stroke.widthProfile ??
-    (stroke.tool === "eraser" ? CONSTANT_STROKE_WIDTH_PROFILE : DEFAULT_STROKE_WIDTH_PROFILE);
-  const radiusAt = (distance: number) =>
-    Math.max(
-      0.75,
-      (stroke.width *
-        Math.min(SCALE_X, SCALE_Y) *
-        widthScaleAt(profile, totalLength === 0 ? 0 : distance / totalLength)) /
-        2
-    );
-  if (totalLength === 0) {
-    const first = scaledPoints[0];
-    if (first !== undefined) drawDisk(raster, first.x, first.y, radiusAt(0), strokeColor);
-    return;
-  }
-  for (let index = 1; index < scaledPoints.length; index += 1) {
-    const start = scaledPoints[index - 1]!;
-    const end = scaledPoints[index]!;
-    const startDistance = distances[index - 1]!;
-    const length = Math.hypot(end.x - start.x, end.y - start.y);
-    const steps = Math.max(1, Math.ceil(length / Math.max(0.75, radiusAt(startDistance) * 0.65)));
-    for (let step = 0; step <= steps; step += 1) {
-      const progress = step / steps;
-      const distance = startDistance + length * progress;
-      drawDisk(
-        raster,
-        start.x + (end.x - start.x) * progress,
-        start.y + (end.y - start.y) * progress,
-        radiusAt(distance),
-        strokeColor
+  const profile = strokeWidthProfileForRender(stroke);
+  for (const layer of brushLayersForStroke(stroke)) {
+    const scaledPoints = layer.points.map(scalePoint);
+    const distances = [0];
+    for (let index = 1; index < scaledPoints.length; index += 1) {
+      const start = scaledPoints[index - 1]!;
+      const end = scaledPoints[index]!;
+      distances.push(distances[index - 1]! + Math.hypot(end.x - start.x, end.y - start.y));
+    }
+    const totalLength = distances.at(-1) ?? 0;
+    const radiusAt = (distance: number) =>
+      Math.max(
+        0.5,
+        (stroke.width *
+          layer.widthScale *
+          Math.min(SCALE_X, SCALE_Y) *
+          strokeWidthScaleAt(profile, totalLength === 0 ? 0 : distance / totalLength)) /
+          2
       );
+    const coverageGeneration = layer.opacity < 1 ? nextCoverageGeneration(raster) : 0;
+    if (totalLength === 0) {
+      const first = scaledPoints[0];
+      if (first !== undefined) {
+        drawDisk(
+          raster,
+          first.x,
+          first.y,
+          radiusAt(0),
+          strokeColor,
+          layer.opacity,
+          coverageGeneration
+        );
+      }
+      continue;
+    }
+    for (let index = 1; index < scaledPoints.length; index += 1) {
+      const start = scaledPoints[index - 1]!;
+      const end = scaledPoints[index]!;
+      const startDistance = distances[index - 1]!;
+      const length = Math.hypot(end.x - start.x, end.y - start.y);
+      const steps = Math.max(1, Math.ceil(length / Math.max(0.5, radiusAt(startDistance) * 0.65)));
+      for (let step = 0; step <= steps; step += 1) {
+        const progress = step / steps;
+        const distance = startDistance + length * progress;
+        drawDisk(
+          raster,
+          start.x + (end.x - start.x) * progress,
+          start.y + (end.y - start.y) * progress,
+          radiusAt(distance),
+          strokeColor,
+          layer.opacity,
+          coverageGeneration
+        );
+      }
     }
   }
 }
