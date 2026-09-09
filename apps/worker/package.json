@@ -17,7 +17,7 @@
     "@drawguessai/game-core": "workspace:*",
     "@drawguessai/network-protocol": "workspace:*",
     "@drawguessai/word-bank": "workspace:*",
-    "hono": "^4.12.30",
+    "hono": "^4.13.5",
     "zod": "^4.4.3"
   },
   "devDependencies": {
